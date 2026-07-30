@@ -1,0 +1,27 @@
+{
+  "network": "studionet",
+  "chainId": 61999,
+  "contractName": "ContributionReviewProtocol",
+  "contractAddress": "0x1456602BD82695d5EAc97dCC41ecb761f66f2ca7",
+  "deploymentTransactionHash": "0x8c9c4b5fef3a1696adc94115b9782bebb8af380e6bd037569eced66b77012c72",
+  "deployer": "0xEd9EDd8586b20524CafA4F568413C504C9B03172",
+  "platformWallet": "0xEd9EDd8586b20524CafA4F568413C504C9B03172",
+  "runner": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6",
+  "executionResult": "SUCCESS",
+  "consensusResult": "MAJORITY_AGREE",
+  "validatorAgreement": "5/5",
+  "deployedAt": "2026-07-29T21:25:35.388414Z",
+  "vercel": {
+    "project": "gen-daves-projects/open-source-bug-bounty-judge",
+    "productionUrl": "https://open-source-bug-bounty-judge.vercel.app",
+    "deploymentUrl": "https://open-source-bug-bounty-judge-8fv2m23i0-gen-daves-projects.vercel.app",
+    "deploymentId": "dpl_FQd6rncUyEfb8WpKsGzxAAno5v2r",
+    "status": "READY",
+    "smokeTestedAt": "2026-07-30T19:05:02.096Z",
+    "health": {
+      "contractConfigured": true,
+      "platformSignerConfigured": true,
+      "openApiPathCount": 11
+    }
+  }
+}
