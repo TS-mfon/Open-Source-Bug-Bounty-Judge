@@ -14,6 +14,8 @@ approval and payout control.
 
 Production application: https://open-source-bug-bounty-judge.vercel.app
 
+Public source repository: https://github.com/TS-mfon/Open-Source-Bug-Bounty-Judge
+
 Current StudioNet deployment:
 
 ```text

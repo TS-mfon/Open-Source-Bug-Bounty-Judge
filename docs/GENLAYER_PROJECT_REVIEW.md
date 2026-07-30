@@ -21,10 +21,9 @@ recommendations. The platform does not execute payouts.
 
 The source appears strong and clearly above a decorative GenLayer integration.
 GenLayer owns the contested judgment that determines contribution eligibility,
-ranking, and recommended budget allocation. The main submission blocker is
-evidence completeness: the StudioNet contract and successful receipt now exist,
-but there is not yet a public GitHub repository or production application URL
-that an external reviewer can inspect.
+ranking, and recommended budget allocation. The public repository and
+production application are now available; the remaining evidence gap is a real
+public GitHub review transaction and its resulting on-chain citations.
 
 ## GenLayer Fit
 
@@ -99,8 +98,8 @@ engineering weakness is deployment evidence, not a missing local implementation.
 
 ## Main Concerns
 
-- No public repository or commit history is available for independent review.
-- No production URL is available for the complete API and wallet workflow.
+- A real public GitHub review transaction and complete campaign review have not
+  yet been published.
 - Campaign dates are stored but not enforced by the contract.
 - Optional Stellar evidence is supplied as bounded HTTPS URLs rather than
   normalized Horizon/Soroban records with domain-specific verification.
@@ -123,14 +122,19 @@ engineering weakness is deployment evidence, not a missing local implementation.
 
 ### Required before submission
 
-1. Publish the contract address, deployment transaction, source, and schema.
-2. Configure a separate platform relayer and keep the owner key offline.
-3. Publish the GitHub repository with passing CI and a clean commit history.
-4. Deploy the application to Vercel with production secrets.
-5. Run one real public GitHub individual review and one multi-candidate campaign
+1. Publish one real public GitHub individual review and one multi-candidate campaign
    review.
-6. Publish the resulting review IDs, transaction hashes, and citations.
-7. Verify one signed webhook delivery and its on-chain delivery mark.
+2. Publish the resulting review IDs, transaction hashes, and citations.
+3. Verify one signed webhook delivery and its on-chain delivery mark.
+
+Completed deployment evidence:
+
+- StudioNet contract address, deployment transaction, source, and schema are
+  recorded in `deployment.studionet.json`.
+- Public repository: `https://github.com/TS-mfon/Open-Source-Bug-Bounty-Judge`.
+- Production API and frontend:
+  `https://open-source-bug-bounty-judge.vercel.app`.
+- Vercel health smoke test reports the configured contract and platform signer.
 
 ### Recommended hardening
 
