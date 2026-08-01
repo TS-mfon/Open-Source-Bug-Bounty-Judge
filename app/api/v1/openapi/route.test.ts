@@ -10,20 +10,18 @@ describe("OpenAPI document", () => {
     expect(document.servers[0].url).toBe("https://judge.example/api/v1");
     expect(Object.keys(document.paths)).toEqual(
       expect.arrayContaining([
-        "/admin/api-keys",
-        "/campaigns",
-        "/campaigns/{id}",
-        "/campaigns/{id}/contributions",
-        "/campaigns/{id}/reviews",
+        "/reviews",
         "/reviews/{id}",
         "/reviews/{id}/appeals",
         "/reviews/single",
+        "/campaign",
         "/webhook-endpoints",
         "/health",
       ]),
     );
-    expect(document.paths["/reviews/{id}"].get.security).toBeUndefined();
-    expect(document.paths["/campaigns"].post.security).toEqual([{ ApiKey: [] }]);
+    expect(document.paths["/reviews/{id}"].get.security).toEqual([]);
+    expect(document.paths["/reviews"].post).toBeDefined();
+    expect(document.paths["/campaigns"]).toBeUndefined();
     expect(document.components.schemas.CandidateResult.properties.citations).toBeDefined();
   });
 });

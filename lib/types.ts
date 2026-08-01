@@ -21,6 +21,35 @@ export type CampaignInput = {
   rubric: Record<string, number>;
 };
 
+export type WalletProfile = {
+  wallet: string;
+  default_workspace: "individual" | "organization";
+  active: boolean;
+};
+
+export type Organization = {
+  id: string;
+  name: string;
+  creator_wallet: string;
+  active: boolean;
+};
+
+export type MembershipRole = "creator" | "admin" | "member";
+
+export type CampaignRecord = {
+  id: string;
+  organization_id: string;
+  name: string;
+  budget_usdc_micros: string;
+  quality_threshold: number;
+  rubric_version: string;
+  rubric: Record<string, number>;
+  status: string;
+  active_api_key_hash: string;
+  created_by: string;
+  latest_review_id: string;
+};
+
 export type CandidateResult = {
   id: string;
   eligible: boolean;

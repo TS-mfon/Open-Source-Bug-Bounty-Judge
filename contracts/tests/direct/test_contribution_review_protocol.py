@@ -86,7 +86,9 @@ def campaign_result(score=90, eligible=True):
                     "deficiencies": [],
                     "flags": [],
                     "citations": [
-                        f"https://api.github.com/repos/{REPOSITORY}/pulls/123"
+                        "https://raw.githubusercontent.com/GrantChain/GrantFox/"
+                        + HEAD_SHA
+                        + "/src/review.ts"
                     ],
                 }
             ],
@@ -95,52 +97,34 @@ def campaign_result(score=90, eligible=True):
 
 
 def mock_github(direct_vm):
-    base = f"https://api.github.com/repos/{REPOSITORY}"
-    direct_vm.mock_web(rf"{base}$", {"status": 200, "body": '{"name":"GrantFox"}'})
+    base = f"https://github.com/{REPOSITORY}"
+    direct_vm.mock_web(rf"{base}$", {"status": 200, "body": "<html>GrantFox repository</html>"})
     direct_vm.mock_web(
         rf"{base}/issues/101$",
-        {"status": 200, "body": '{"title":"Implement review API","body":"Acceptance criteria"}'},
+        {"status": 200, "body": "<html>Implement review API. Acceptance criteria.</html>"},
     )
     direct_vm.mock_web(
-        rf"{base}/pulls/123$",
+        rf"{base}/pull/123$",
         {
             "status": 200,
-            "body": json.dumps(
-                {
-                    "head": {"sha": HEAD_SHA},
-                    "merged": True,
-                    "user": {"login": "builder"},
-                }
-            ),
+            "body": f"<html>Pull request by builder at {HEAD_SHA}</html>",
         },
     )
     direct_vm.mock_web(
-        rf"{base}/pulls/123/files.*",
+        rf"{base}/pull/123\.patch$",
         {
             "status": 200,
-            "body": json.dumps(
-                [
-                    {
-                        "filename": "src/review.ts",
-                        "status": "modified",
-                        "additions": 40,
-                        "deletions": 4,
-                        "patch": "@@ implementation and validation @@",
-                        "raw_url": "https://raw.githubusercontent.com/GrantChain/GrantFox/"
-                        + HEAD_SHA
-                        + "/src/review.ts",
-                    }
-                ]
+            "body": (
+                f"From {HEAD_SHA} Mon Sep 17 00:00:00 2001\n"
+                "Subject: [PATCH] Implement review API\n\n"
+                "diff --git a/src/review.ts b/src/review.ts\n"
+                "--- a/src/review.ts\n"
+                "+++ b/src/review.ts\n"
+                "@@ -1 +1 @@\n"
+                "-export const review = false;\n"
+                "+export function review() { return true; }\n"
             ),
         },
-    )
-    direct_vm.mock_web(
-        rf"{base}/pulls/123/reviews.*",
-        {"status": 200, "body": '[{"state":"APPROVED"}]'},
-    )
-    direct_vm.mock_web(
-        rf"{base}/pulls/123/commits.*",
-        {"status": 200, "body": '[{"sha":"commit"}]'},
     )
     direct_vm.mock_web(
         r"https://raw\.githubusercontent\.com/.*",
@@ -151,7 +135,11 @@ def mock_github(direct_vm):
 def deploy_protocol(direct_vm, direct_deploy, direct_alice):
     direct_vm.sender = direct_alice
     platform = "0x" + direct_alice.hex()
-    return direct_deploy("contracts/contribution_review_protocol.py", platform)
+    return direct_deploy(
+        "contracts/contribution_review_protocol.py",
+        platform,
+        platform,
+    )
 
 
 def register_org(contract, scopes=None):

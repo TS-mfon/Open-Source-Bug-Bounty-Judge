@@ -18,15 +18,18 @@
     "node": "24.x"
   },
   "dependencies": {
+    "@types/three": "^0.185.1",
     "genlayer-js": "^1.1.8",
     "lucide-react": "^1.27.0",
     "next": "16.2.12",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "three": "^0.185.1",
     "viem": "^2.55.8",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",

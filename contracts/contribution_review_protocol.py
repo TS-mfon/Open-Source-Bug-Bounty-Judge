@@ -149,14 +149,25 @@ def _github_api(repository: str, suffix: str) -> str:
     return "https://api.github.com/repos/" + parts[0] + "/" + parts[1] + suffix
 
 
+def _github_web(repository: str, suffix: str) -> str:
+    parts = _repository_parts(repository)
+    return "https://github.com/" + parts[0] + "/" + parts[1] + suffix
+
+
 def _fetch_text(url: str, required: bool = False) -> dict:
-    response = gl.nondet.web.get(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "OpenSourceBugBountyJudge/1.0",
-        },
-    )
+    response = None
+    for _ in range(2):
+        response = gl.nondet.web.get(
+            url,
+            headers={
+                "Accept": "text/html,application/json,application/octet-stream",
+                "User-Agent": "OpenSourceBugBountyJudge/1.0",
+            },
+        )
+        if response.status not in (500, 502, 503, 504):
+            break
+    if response is None:
+        raise gl.vm.UserError(f"{ERROR_TRANSIENT} Source request failed: {url}")
     if response.status >= 500:
         raise gl.vm.UserError(f"{ERROR_TRANSIENT} Source temporarily unavailable: {url}")
     if response.status in (403, 429):
@@ -177,6 +188,26 @@ def _fetch_text(url: str, required: bool = False) -> dict:
     }
 
 
+def _patch_sections(patch: str) -> list[dict]:
+    sections = []
+    current = None
+    current_lines = []
+    for line in patch.splitlines():
+        if line.startswith("diff --git a/") and " b/" in line:
+            if current is not None:
+                current["patch"] = "\n".join(current_lines)[:8000]
+                sections.append(current)
+            filename = line.split(" b/", 1)[1].strip()
+            current = {"filename": filename, "patch": ""}
+            current_lines = [line]
+        elif current is not None:
+            current_lines.append(line)
+    if current is not None:
+        current["patch"] = "\n".join(current_lines)[:8000]
+        sections.append(current)
+    return sections
+
+
 def _fetch_candidate_evidence(candidate: dict) -> dict:
     candidate_id = _required_string(candidate.get("id", ""), "candidate id", 96)
     repository = _required_string(candidate.get("repository", ""), "repository", 202)
@@ -193,58 +224,72 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid head SHA")
 
     source_urls = [
-        _github_api(repository, ""),
-        _github_api(repository, "/issues/" + str(issue_number)),
-        _github_api(repository, "/pulls/" + str(pull_number)),
-        _github_api(repository, "/pulls/" + str(pull_number) + "/files?per_page=100"),
-        _github_api(repository, "/pulls/" + str(pull_number) + "/reviews?per_page=100"),
-        _github_api(repository, "/pulls/" + str(pull_number) + "/commits?per_page=100"),
+        _github_web(repository, ""),
+        _github_web(repository, "/issues/" + str(issue_number)),
+        _github_web(repository, "/pull/" + str(pull_number)),
+        _github_web(repository, "/pull/" + str(pull_number) + ".patch"),
     ]
     sources = [
         _fetch_text(source_urls[0], True),
         _fetch_text(source_urls[1], True),
         _fetch_text(source_urls[2], True),
         _fetch_text(source_urls[3], True),
-        _fetch_text(source_urls[4], False),
-        _fetch_text(source_urls[5], False),
     ]
 
-    pull_data = _parse_json(sources[2]["content"], "GitHub pull request response")
-    actual_head = str(
-        (pull_data.get("head", {}) if isinstance(pull_data, dict) else {}).get("sha", "")
-    ).lower()
-    if actual_head != head_sha:
+    patch_content = sources[3]["content"]
+    if head_sha not in patch_content.lower():
         raise gl.vm.UserError(f"{ERROR_EXPECTED} Pull request head SHA changed")
 
-    files_data = _parse_json(sources[3]["content"], "GitHub changed files response")
-    if not isinstance(files_data, list) or len(files_data) == 0:
+    file_sections = _patch_sections(patch_content)
+    if len(file_sections) == 0:
         raise gl.vm.UserError(f"{ERROR_EXTERNAL} Pull request has no fetchable changed files")
-    if len(files_data) > 100:
+    if len(file_sections) > MAX_CHANGED_FILES:
         raise gl.vm.UserError(f"{ERROR_EXTERNAL} Pull request is too large for one review")
 
     changed_files = []
-    for file_data in files_data[:MAX_CHANGED_FILES]:
-        if not isinstance(file_data, dict):
-            continue
+    parts = _repository_parts(repository)
+    for file_data in file_sections:
         filename = str(file_data.get("filename", "")).strip()
-        raw_url = str(file_data.get("raw_url", "")).strip()
-        if not raw_url.startswith("https://raw.githubusercontent.com/"):
+        if not filename or filename == "/dev/null":
             continue
-        raw_source = _fetch_text(raw_url, False)
+        patch = str(file_data.get("patch", ""))
+        if "deleted file mode " in patch:
+            changed_files.append(
+                {
+                    "filename": filename,
+                    "status": "deleted",
+                    "additions": 0,
+                    "deletions": 0,
+                    "patch": patch,
+                    "raw_url": "",
+                    "content": "",
+                }
+            )
+            continue
+        raw_url = (
+            "https://raw.githubusercontent.com/"
+            + parts[0]
+            + "/"
+            + parts[1]
+            + "/"
+            + head_sha
+            + "/"
+            + filename
+        )
+        raw_source = _fetch_text(raw_url, True)
         sources.append(raw_source)
         changed_files.append(
             {
                 "filename": filename,
-                "status": str(file_data.get("status", "")),
-                "additions": int(file_data.get("additions", 0)),
-                "deletions": int(file_data.get("deletions", 0)),
-                "patch": str(file_data.get("patch", ""))[:8000],
+                "status": "changed",
+                "additions": 0,
+                "deletions": 0,
+                "patch": patch,
                 "raw_url": raw_url,
                 "content": raw_source["content"],
             }
         )
 
-    parts = _repository_parts(repository)
     raw_base = (
         "https://raw.githubusercontent.com/"
         + parts[0]
@@ -256,10 +301,7 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
     )
     for filename in (
         "README.md",
-        "CONTRIBUTING.md",
         "package.json",
-        "Cargo.toml",
-        "pyproject.toml",
         ".github/workflows/ci.yml",
     ):
         sources.append(_fetch_text(raw_base + filename, False))
@@ -539,6 +581,7 @@ reward activity volume alone. Cite only exact URLs fetched by the contract.
 class ContributionReviewProtocol(gl.Contract):
     owner: str
     platform_wallet: str
+    registry_contract: str
     organizations: TreeMap[str, str]
     api_keys: TreeMap[str, str]
     campaigns: TreeMap[str, str]
@@ -553,16 +596,71 @@ class ContributionReviewProtocol(gl.Contract):
     review_ids: DynArray[str]
     campaign_count: u256
     review_count: u256
+    wallet_action_nonces: TreeMap[str, u256]
+    organization_campaign_ids: TreeMap[str, str]
+    organization_campaign_counts: TreeMap[str, u256]
+    organization_review_ids: TreeMap[str, str]
+    organization_review_counts: TreeMap[str, u256]
+    campaign_review_ids: TreeMap[str, str]
+    campaign_review_counts: TreeMap[str, u256]
+    wallet_review_ids: TreeMap[str, str]
 
-    def __init__(self, platform_wallet: str):
+    def __init__(self, platform_wallet: str, registry_contract: str):
         self.owner = str(gl.message.sender_address).lower()
         self.platform_wallet = str(platform_wallet).lower()
+        self.registry_contract = str(registry_contract).lower()
         self.campaign_count = u256(0)
         self.review_count = u256(0)
 
     def _only_platform(self) -> None:
         if str(gl.message.sender_address).lower() != self.platform_wallet:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Only platform wallet")
+
+    def _consume_wallet_nonce(self, wallet: str, nonce: int) -> None:
+        wallet = wallet.lower()
+        expected = self.wallet_action_nonces.get(wallet, u256(0))
+        if int(nonce) != int(expected):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid wallet action nonce")
+        self.wallet_action_nonces[wallet] = expected + u256(1)
+
+    def _require_organization_admin(
+        self, organization_id: str, actor_wallet: str
+    ) -> None:
+        registry = gl.get_contract_at(Address(self.registry_contract))
+        role = str(
+            registry.view().get_member_role(organization_id, actor_wallet.lower())
+        )
+        if role not in ("creator", "admin"):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Organization admin required")
+
+    def _append_review_indexes(
+        self,
+        review_id: str,
+        organization_id: str,
+        campaign_id: str,
+        requester_wallet: str,
+    ) -> None:
+        if organization_id != "individual":
+            org_count = self.organization_review_counts.get(
+                organization_id, u256(0)
+            )
+            self.organization_review_ids[
+                organization_id + ":" + str(int(org_count))
+            ] = review_id
+            self.organization_review_counts[organization_id] = org_count + u256(1)
+
+            campaign_count = self.campaign_review_counts.get(campaign_id, u256(0))
+            self.campaign_review_ids[
+                campaign_id + ":" + str(int(campaign_count))
+            ] = review_id
+            self.campaign_review_counts[campaign_id] = campaign_count + u256(1)
+        elif requester_wallet:
+            wallet_count = self.wallet_review_counts.get(
+                requester_wallet.lower(), u256(0)
+            )
+            self.wallet_review_ids[
+                requester_wallet.lower() + ":" + str(int(wallet_count))
+            ] = review_id
 
     def _claim_idempotency(self, key: str, resource_id: str) -> None:
         normalized = _required_string(key, "idempotency key", 128)
@@ -652,6 +750,248 @@ class ContributionReviewProtocol(gl.Contract):
         parsed = _parse_json(record, "API key record")
         parsed["active"] = False
         self.api_keys[key_hash] = json.dumps(parsed, sort_keys=True)
+
+    @gl.public.write
+    def create_dashboard_campaign(
+        self,
+        campaign_id: str,
+        organization_id: str,
+        actor_wallet: str,
+        name: str,
+        budget_usdc_micros: str,
+        quality_threshold: int,
+        rubric_version: str,
+        rubric_json: str,
+        key_hash: str,
+        action_nonce: int,
+    ) -> None:
+        self._only_platform()
+        campaign_id = _required_string(campaign_id, "campaign id", 96)
+        organization_id = _required_string(organization_id, "organization id", 96)
+        actor_wallet = _required_string(actor_wallet, "actor wallet", 42).lower()
+        key_hash = _required_string(key_hash, "API key hash", 64)
+        if self.campaigns.get(campaign_id, "") != "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign already exists")
+        if self.api_keys.get(key_hash, "") != "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} API key already exists")
+        self._require_organization_admin(organization_id, actor_wallet)
+        self._consume_wallet_nonce(actor_wallet, action_nonce)
+        try:
+            budget = int(budget_usdc_micros)
+            threshold = int(quality_threshold)
+        except Exception:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign configuration")
+        if budget <= 0:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign budget")
+        if threshold < 50 or threshold > 95:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid quality threshold")
+        rubric = _validated_rubric(_parse_json(rubric_json, "Rubric"))
+        campaign = {
+            "id": campaign_id,
+            "organization_id": organization_id,
+            "name": _required_string(name, "campaign name", 160),
+            "budget_usdc_micros": str(budget),
+            "quality_threshold": threshold,
+            "rubric_version": _required_string(
+                rubric_version, "rubric version", 64
+            ),
+            "rubric": rubric,
+            "status": "active",
+            "active_api_key_hash": key_hash,
+            "created_by": actor_wallet,
+            "latest_review_id": "",
+        }
+        self.campaigns[campaign_id] = json.dumps(campaign, sort_keys=True)
+        self.campaign_contributions[campaign_id] = "[]"
+        self.api_keys[key_hash] = json.dumps(
+            {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "scopes": [
+                    "reviews:create",
+                    "reviews:read",
+                    "appeals:create",
+                    "webhooks:manage",
+                ],
+                "active": True,
+                "usage_count": 0,
+                "max_requests": 10000,
+            },
+            sort_keys=True,
+        )
+        org_count = self.organization_campaign_counts.get(
+            organization_id, u256(0)
+        )
+        self.organization_campaign_ids[
+            organization_id + ":" + str(int(org_count))
+        ] = campaign_id
+        self.organization_campaign_counts[organization_id] = org_count + u256(1)
+        self.campaign_ids.append(campaign_id)
+        self.campaign_count += u256(1)
+
+    @gl.public.write
+    def rotate_campaign_api_key(
+        self,
+        campaign_id: str,
+        organization_id: str,
+        actor_wallet: str,
+        new_key_hash: str,
+        action_nonce: int,
+    ) -> None:
+        self._only_platform()
+        campaign_raw = self.campaigns.get(campaign_id, "")
+        if campaign_raw == "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign not found")
+        campaign = _parse_json(campaign_raw, "Campaign")
+        if campaign.get("organization_id") != organization_id:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign organization mismatch")
+        actor_wallet = _required_string(actor_wallet, "actor wallet", 42).lower()
+        new_key_hash = _required_string(new_key_hash, "API key hash", 64)
+        if self.api_keys.get(new_key_hash, "") != "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} API key already exists")
+        self._require_organization_admin(organization_id, actor_wallet)
+        self._consume_wallet_nonce(actor_wallet, action_nonce)
+        old_hash = str(campaign.get("active_api_key_hash", ""))
+        if old_hash:
+            old_raw = self.api_keys.get(old_hash, "")
+            if old_raw:
+                old_record = _parse_json(old_raw, "API key record")
+                old_record["active"] = False
+                self.api_keys[old_hash] = json.dumps(old_record, sort_keys=True)
+        self.api_keys[new_key_hash] = json.dumps(
+            {
+                "organization_id": organization_id,
+                "campaign_id": campaign_id,
+                "scopes": [
+                    "reviews:create",
+                    "reviews:read",
+                    "appeals:create",
+                    "webhooks:manage",
+                ],
+                "active": True,
+                "usage_count": 0,
+                "max_requests": 10000,
+            },
+            sort_keys=True,
+        )
+        campaign["active_api_key_hash"] = new_key_hash
+        self.campaigns[campaign_id] = json.dumps(campaign, sort_keys=True)
+
+    @gl.public.write
+    def revoke_campaign_api_key(
+        self,
+        campaign_id: str,
+        organization_id: str,
+        actor_wallet: str,
+        action_nonce: int,
+    ) -> None:
+        self._only_platform()
+        campaign_raw = self.campaigns.get(campaign_id, "")
+        if campaign_raw == "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign not found")
+        campaign = _parse_json(campaign_raw, "Campaign")
+        if campaign.get("organization_id") != organization_id:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign organization mismatch")
+        actor_wallet = _required_string(actor_wallet, "actor wallet", 42).lower()
+        self._require_organization_admin(organization_id, actor_wallet)
+        self._consume_wallet_nonce(actor_wallet, action_nonce)
+        key_hash = str(campaign.get("active_api_key_hash", ""))
+        raw = self.api_keys.get(key_hash, "")
+        if raw:
+            record = _parse_json(raw, "API key record")
+            record["active"] = False
+            self.api_keys[key_hash] = json.dumps(record, sort_keys=True)
+        campaign["active_api_key_hash"] = ""
+        self.campaigns[campaign_id] = json.dumps(campaign, sort_keys=True)
+
+    @gl.public.write
+    def request_batch_review(
+        self,
+        review_id: str,
+        review_key: str,
+        candidates_json: str,
+        key_hash: str,
+        idempotency_key: str,
+        appeal_context: str,
+    ) -> None:
+        self._only_platform()
+        review_id = _required_string(review_id, "review id", 128)
+        review_key = _required_string(review_key, "review key", 64)
+        key_hash = _required_string(key_hash, "API key hash", 64)
+        record_raw = self.api_keys.get(key_hash, "")
+        if record_raw == "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} API key not found")
+        record = _parse_json(record_raw, "API key record")
+        organization_id = str(record.get("organization_id", ""))
+        campaign_id = str(record.get("campaign_id", ""))
+        self._consume_api_key(key_hash, organization_id, "reviews:create")
+        if self.reviews.get(review_id, "") != "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Review already exists")
+        existing_review = self.review_ids_by_key.get(review_key, "")
+        if existing_review != "":
+            raise gl.vm.UserError(
+                f"{ERROR_EXPECTED} Pull request revision already reviewed: {existing_review}"
+            )
+        campaign_raw = self.campaigns.get(campaign_id, "")
+        if campaign_raw == "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign not found")
+        campaign = _parse_json(campaign_raw, "Campaign")
+        candidates = _parse_json(candidates_json, "Candidates")
+        if (
+            not isinstance(candidates, list)
+            or len(candidates) == 0
+            or len(candidates) > MAX_CAMPAIGN_CANDIDATES
+        ):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid candidate batch")
+        ids = set()
+        revisions = set()
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid candidate")
+            candidate_id = _required_string(
+                candidate.get("id", ""), "candidate id", 96
+            )
+            revision = (
+                str(candidate.get("repository", "")).lower()
+                + ":"
+                + str(candidate.get("pullRequestNumber", ""))
+                + ":"
+                + str(candidate.get("headSha", "")).lower()
+            )
+            if candidate_id in ids or revision in revisions:
+                raise gl.vm.UserError(f"{ERROR_EXPECTED} Duplicate candidate revision")
+            ids.add(candidate_id)
+            revisions.add(revision)
+        expected_review_key = _campaign_review_key(
+            organization_id,
+            campaign_id,
+            candidates,
+            str(campaign["rubric_version"]),
+        )
+        if review_key != expected_review_key:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign review key")
+        self._claim_idempotency(
+            organization_id + ":" + idempotency_key,
+            review_id,
+        )
+        result = _evaluate_candidates(candidates, campaign, appeal_context)
+        stored = {
+            "review_id": review_id,
+            "review_key": review_key,
+            "campaign_id": campaign_id,
+            "organization_id": organization_id,
+            "status": result["status"],
+            "budget_usdc_micros": campaign["budget_usdc_micros"],
+            "candidates": candidates,
+            "result": result,
+        }
+        self.reviews[review_id] = json.dumps(stored, sort_keys=True)
+        self.review_ids_by_key[review_key] = review_id
+        self.review_ids.append(review_id)
+        self.review_count += u256(1)
+        self._append_review_indexes(review_id, organization_id, campaign_id, "")
+        campaign["latest_review_id"] = review_id
+        self.campaigns[campaign_id] = json.dumps(campaign, sort_keys=True)
 
     @gl.public.write
     def create_campaign(
@@ -898,11 +1238,15 @@ class ContributionReviewProtocol(gl.Contract):
             "requester_wallet": requester_wallet.lower(),
             "status": result["status"],
             "budget_usdc_micros": "0",
+            "candidates": [contribution],
             "result": result,
         }
         self.reviews[review_id] = json.dumps(stored, sort_keys=True)
         self.review_ids_by_key[review_key] = review_id
         self.review_ids.append(review_id)
+        self.wallet_review_ids[
+            wallet_key + ":" + str(int(used))
+        ] = review_id
         self.review_count += u256(1)
 
     @gl.public.write
@@ -942,9 +1286,11 @@ class ContributionReviewProtocol(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Appeal already reviewed")
         campaign_id = str(original["campaign_id"])
         campaign = _parse_json(self.campaigns.get(campaign_id, ""), "Campaign")
-        candidates = _parse_json(
-            self.campaign_contributions.get(campaign_id, "[]"), "Contributions"
-        )
+        candidates = original.get("candidates", [])
+        if not isinstance(candidates, list) or len(candidates) == 0:
+            candidates = _parse_json(
+                self.campaign_contributions.get(campaign_id, "[]"), "Contributions"
+            )
         self._claim_idempotency(
             organization_id + ":" + idempotency_key,
             review_id,
@@ -957,6 +1303,7 @@ class ContributionReviewProtocol(gl.Contract):
             "organization_id": organization_id,
             "status": result["status"],
             "budget_usdc_micros": campaign["budget_usdc_micros"],
+            "candidates": candidates,
             "result": result,
             "appeal_context": appeal_context,
             "supersedes_review_id": original_review_id,
@@ -965,6 +1312,9 @@ class ContributionReviewProtocol(gl.Contract):
         self.review_ids_by_key[review_key] = review_id
         self.review_ids.append(review_id)
         self.review_count += u256(1)
+        self._append_review_indexes(
+            review_id, organization_id, campaign_id, ""
+        )
         campaign["status"] = (
             "admin_review" if result["status"] == "admin_review" else "finalized"
         )
@@ -979,8 +1329,6 @@ class ContributionReviewProtocol(gl.Contract):
         key_hash: str,
     ) -> None:
         self._only_platform()
-        if self.organizations.get(organization_id, "") == "":
-            raise gl.vm.UserError(f"{ERROR_EXPECTED} Organization not found")
         self._consume_api_key(key_hash, organization_id, "webhooks:manage")
         if not endpoint_url.startswith("https://"):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Webhook endpoint must use HTTPS")
@@ -1044,3 +1392,47 @@ class ContributionReviewProtocol(gl.Contract):
         if index >= self.review_count:
             return ""
         return self.review_ids[index]
+
+    @gl.public.view
+    def get_wallet_action_nonce(self, wallet: str) -> u256:
+        return self.wallet_action_nonces.get(str(wallet).lower(), u256(0))
+
+    @gl.public.view
+    def get_organization_campaign_count(self, organization_id: str) -> u256:
+        return self.organization_campaign_counts.get(organization_id, u256(0))
+
+    @gl.public.view
+    def get_organization_campaign_id_at(
+        self, organization_id: str, index: u256
+    ) -> str:
+        return self.organization_campaign_ids.get(
+            organization_id + ":" + str(int(index)), ""
+        )
+
+    @gl.public.view
+    def get_organization_review_count(self, organization_id: str) -> u256:
+        return self.organization_review_counts.get(organization_id, u256(0))
+
+    @gl.public.view
+    def get_organization_review_id_at(
+        self, organization_id: str, index: u256
+    ) -> str:
+        return self.organization_review_ids.get(
+            organization_id + ":" + str(int(index)), ""
+        )
+
+    @gl.public.view
+    def get_campaign_review_count(self, campaign_id: str) -> u256:
+        return self.campaign_review_counts.get(campaign_id, u256(0))
+
+    @gl.public.view
+    def get_campaign_review_id_at(self, campaign_id: str, index: u256) -> str:
+        return self.campaign_review_ids.get(
+            campaign_id + ":" + str(int(index)), ""
+        )
+
+    @gl.public.view
+    def get_wallet_review_id_at(self, wallet: str, index: u256) -> str:
+        return self.wallet_review_ids.get(
+            str(wallet).lower() + ":" + str(int(index)), ""
+        )

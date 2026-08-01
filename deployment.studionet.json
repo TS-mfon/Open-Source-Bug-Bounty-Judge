@@ -1,27 +1,45 @@
 {
   "network": "studionet",
   "chainId": 61999,
-  "contractName": "ContributionReviewProtocol",
-  "contractAddress": "0x1456602BD82695d5EAc97dCC41ecb761f66f2ca7",
-  "deploymentTransactionHash": "0x8c9c4b5fef3a1696adc94115b9782bebb8af380e6bd037569eced66b77012c72",
-  "deployer": "0xEd9EDd8586b20524CafA4F568413C504C9B03172",
   "platformWallet": "0xEd9EDd8586b20524CafA4F568413C504C9B03172",
   "runner": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6",
-  "executionResult": "SUCCESS",
-  "consensusResult": "MAJORITY_AGREE",
-  "validatorAgreement": "5/5",
-  "deployedAt": "2026-07-29T21:25:35.388414Z",
+  "deployedAt": "2026-08-01",
+  "registry": {
+    "contractName": "OrganizationRegistry",
+    "contractAddress": "0x08B0329Ec8A8df286b30d425A47e28B7F615Aa2a",
+    "deploymentTransactionHash": "0xd4122d9fd99f804c9a882f202636ec231318e23e69ebf9cbb3b551f81873243b",
+    "executionResult": "SUCCESS",
+    "consensusResult": "MAJORITY_AGREE",
+    "validatorAgreement": "5/5"
+  },
+  "reviewProtocol": {
+    "contractName": "ContributionReviewProtocol",
+    "contractAddress": "0x44Cc638BC514E899827aDCdcE1Ff303D7d042382",
+    "deploymentTransactionHash": "0xfcb3a15eff277eff6b2afa94551fe2dfcc6dac0d0182a1bcfeaf358bf1209aec",
+    "registryAddress": "0x08B0329Ec8A8df286b30d425A47e28B7F615Aa2a",
+    "executionResult": "SUCCESS",
+    "consensusResult": "MAJORITY_AGREE",
+    "validatorAgreement": "5/5"
+  },
+  "supersededReviewContracts": [
+    {
+      "contractAddress": "0x4ddE8532a701Fcd6C28C62b644E369E90a1Fc47F",
+      "deploymentTransactionHash": "0x95a0d084ed1838d9ffef173b8a8ca011d0b64acdb30724e3c12cc654d290ae1b"
+    },
+    {
+      "contractAddress": "0x1456602BD82695d5EAc97dCC41ecb761f66f2ca7",
+      "deploymentTransactionHash": "0x8c9c4b5fef3a1696adc94115b9782bebb8af380e6bd037569eced66b77012c72"
+    },
+    {
+      "contractAddress": "0x5a928B57Af64e1460ce23aB18e26B94C43FbDFCB",
+      "deploymentTransactionHash": "0x8ebc070294e8969d4c358c13b46b155bdae5a060704f22d6f639759786b2cff7"
+    }
+  ],
   "vercel": {
     "project": "gen-daves-projects/open-source-bug-bounty-judge",
     "productionUrl": "https://open-source-bug-bounty-judge.vercel.app",
-    "deploymentUrl": "https://open-source-bug-bounty-judge-8fv2m23i0-gen-daves-projects.vercel.app",
-    "deploymentId": "dpl_FQd6rncUyEfb8WpKsGzxAAno5v2r",
-    "status": "READY",
-    "smokeTestedAt": "2026-07-30T19:05:02.096Z",
-    "health": {
-      "contractConfigured": true,
-      "platformSignerConfigured": true,
-      "openApiPathCount": 11
-    }
+    "deploymentUrl": "https://open-source-bug-bounty-judge-7ggkuwhgf-gen-daves-projects.vercel.app",
+    "deploymentId": "ELmQEaxAjaNuYH6UipU9LSXLegso",
+    "status": "ready"
   }
 }

@@ -1,6 +1,6 @@
 import { verifyMessage } from "viem";
 import { ApiError } from "./errors";
-import { sha256 } from "./hash";
+import { canonicalJson, sha256 } from "./hash";
 import { readApiKeyRecord } from "./genlayer";
 
 export async function requireApiKey(request: Request, scope: string) {
@@ -20,6 +20,42 @@ export async function requireApiKey(request: Request, scope: string) {
     throw new ApiError("MISSING_SCOPE", `The API key requires ${scope}.`, 403);
   }
   return { ...record, key_hash: sha256(apiKey) };
+}
+
+export function walletActionMessage(input: {
+  wallet: string;
+  action: string;
+  payloadHash: string;
+  nonce: number;
+  expiresAt: number;
+}) {
+  return [
+    "Open Source Bug Bounty Judge",
+    `Wallet: ${input.wallet.toLowerCase()}`,
+    `Action: ${input.action}`,
+    `Payload hash: ${input.payloadHash.toLowerCase()}`,
+    `Nonce: ${input.nonce}`,
+    `Expires at: ${input.expiresAt}`,
+  ].join("\n");
+}
+
+export async function verifyWalletAction(input: {
+  wallet: `0x${string}`;
+  signature: `0x${string}`;
+  action: string;
+  payloadHash: string;
+  payload: unknown;
+  nonce: number;
+  expiresAt: number;
+}) {
+  const now = Math.floor(Date.now() / 1000);
+  if (input.expiresAt < now || input.expiresAt > now + 15 * 60) return false;
+  if (sha256(canonicalJson(input.payload)) !== input.payloadHash.toLowerCase()) return false;
+  return verifyMessage({
+    address: input.wallet,
+    message: walletActionMessage(input),
+    signature: input.signature,
+  });
 }
 
 export function walletReviewMessage(input: {

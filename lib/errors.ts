@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import type { ApiErrorBody } from "./types";
 
 export class ApiError extends Error {
@@ -21,9 +22,17 @@ export function errorResponse(error: unknown, id: string) {
   const apiError =
     error instanceof ApiError
       ? error
+      : error instanceof ZodError
+        ? new ApiError(
+            "INVALID_REQUEST",
+            "Request validation failed.",
+            422,
+            false,
+            error.issues,
+          )
       : new ApiError(
           "INTERNAL_ERROR",
-          error instanceof Error ? error.message : "Unexpected server error",
+          "Unexpected server error.",
           500,
           true,
         );

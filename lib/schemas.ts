@@ -24,6 +24,53 @@ export const campaignSchema = z.object({
   rubric: rubricSchema,
 });
 
+export const walletActionEnvelopeSchema = z.object({
+  wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  signature: z.string().regex(/^0x[0-9a-fA-F]+$/),
+  action: z.string().min(3).max(64),
+  payloadHash: z.string().regex(/^[0-9a-fA-F]{64}$/),
+  nonce: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive(),
+  payload: z.unknown(),
+});
+
+export const profilePayloadSchema = z.object({
+  defaultWorkspace: z.enum(["individual", "organization"]),
+});
+
+export const organizationPayloadSchema = z.object({
+  id: z.string().min(3).max(96).regex(/^[a-z0-9-]+$/),
+  name: z.string().min(2).max(160),
+});
+
+export const memberPayloadSchema = z.object({
+  organizationId: z.string().min(3).max(96),
+  memberWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  role: z.enum(["admin", "member"]),
+});
+
+export const campaignDashboardPayloadSchema = z.object({
+  id: z.string().min(3).max(96).regex(/^[a-zA-Z0-9:_-]+$/),
+  organizationId: z.string().min(3).max(96),
+  name: z.string().min(3).max(160),
+  budgetUsdcMicros: z.string().regex(/^[1-9][0-9]*$/),
+  qualityThreshold: z.number().int().min(50).max(95),
+  rubricVersion: z.string().min(1).max(64).default("code-v1"),
+  rubric: rubricSchema,
+  keyHash: z.string().regex(/^[0-9a-fA-F]{64}$/),
+});
+
+export const campaignKeyRotationPayloadSchema = z.object({
+  campaignId: z.string().min(3).max(96),
+  organizationId: z.string().min(3).max(96),
+  keyHash: z.string().regex(/^[0-9a-fA-F]{64}$/),
+});
+
+export const campaignKeyRevocationPayloadSchema = z.object({
+  campaignId: z.string().min(3).max(96),
+  organizationId: z.string().min(3).max(96),
+});
+
 export const contributionSchema = z.object({
   id: z.string().min(3).max(96).regex(/^[a-zA-Z0-9:_-]+$/),
   repository,
@@ -39,6 +86,20 @@ export const contributionSchema = z.object({
     "security",
     "mixed",
   ]),
+  stellarEvidenceUrls: z.array(z.url().startsWith("https://")).max(6).default([]),
+});
+
+export const batchReviewSchema = z.object({
+  candidates: z.array(contributionSchema).min(1).max(12),
+  appealContext: z.string().max(4000).default(""),
+});
+
+export const individualReviewIntentSchema = z.object({
+  repository: repository,
+  issueNumber: z.number().int().positive(),
+  pullRequestNumber: z.number().int().positive(),
+  contributor: z.string().max(80).default(""),
+  contributionType: contributionSchema.shape.contributionType,
   stellarEvidenceUrls: z.array(z.url().startsWith("https://")).max(6).default([]),
 });
 

@@ -58,3 +58,36 @@ export async function preflightContribution(contribution: ContributionInput) {
   }
   return { pullAuthor: pullData.user?.login ?? "" };
 }
+
+export async function resolvePullRequestHead(
+  repository: string,
+  pullRequestNumber: number,
+) {
+  const response = await fetch(
+    `https://api.github.com/repos/${repository}/pulls/${pullRequestNumber}`,
+    { headers, cache: "no-store" },
+  );
+  if (response.status === 404) {
+    throw new ApiError("EVIDENCE_NOT_FOUND", "GitHub pull request was not found.", 422);
+  }
+  if (response.status === 403 || response.status === 429) {
+    throw new ApiError(
+      "GITHUB_RATE_LIMITED",
+      "GitHub evidence is temporarily rate limited.",
+      503,
+      true,
+    );
+  }
+  if (!response.ok) {
+    throw new ApiError("GITHUB_UNAVAILABLE", "Unable to resolve the pull request.", 502, true);
+  }
+  const pull = (await response.json()) as {
+    head?: { sha?: string };
+    user?: { login?: string };
+  };
+  const headSha = pull.head?.sha ?? "";
+  if (!/^[0-9a-fA-F]{40}$/.test(headSha)) {
+    throw new ApiError("INVALID_GITHUB_RESPONSE", "GitHub returned an invalid head SHA.", 502);
+  }
+  return { headSha, contributor: pull.user?.login ?? "" };
+}
