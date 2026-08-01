@@ -212,6 +212,25 @@ def _patch_sections(patch: str) -> list[dict]:
     return sections
 
 
+def _resolve_pull_request_head(repository: str, pull_number: int) -> tuple[str, dict]:
+    source = _fetch_text(
+        _github_api(repository, "/pulls/" + str(pull_number)),
+        True,
+    )
+    pull = _parse_json(source["content"], "GitHub pull request response")
+    if not isinstance(pull, dict):
+        raise gl.vm.UserError(f"{ERROR_EXTERNAL} Invalid GitHub pull request response")
+    head = pull.get("head", {})
+    if not isinstance(head, dict):
+        raise gl.vm.UserError(f"{ERROR_EXTERNAL} GitHub pull request head is missing")
+    head_sha = str(head.get("sha", "")).strip().lower()
+    if len(head_sha) != 40 or any(
+        character not in "0123456789abcdef" for character in head_sha
+    ):
+        raise gl.vm.UserError(f"{ERROR_EXTERNAL} GitHub returned an invalid head SHA")
+    return head_sha, source
+
+
 def _fetch_candidate_evidence(candidate: dict) -> dict:
     candidate_id = _required_string(candidate.get("id", ""), "candidate id", 96)
     repository = _required_string(candidate.get("repository", ""), "repository", 202)
@@ -223,9 +242,7 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid issue or pull request number")
     if issue_number <= 0 or pull_number <= 0:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid issue or pull request number")
-    head_sha = _required_string(candidate.get("headSha", ""), "head SHA", 40).lower()
-    if len(head_sha) != 40:
-        raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid head SHA")
+    head_sha, pull_api_source = _resolve_pull_request_head(repository, pull_number)
 
     source_urls = [
         _github_web(repository, ""),
@@ -234,15 +251,14 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
         _github_web(repository, "/pull/" + str(pull_number) + ".patch"),
     ]
     sources = [
+        pull_api_source,
         _fetch_text(source_urls[0], True),
         _fetch_text(source_urls[1], True),
         _fetch_text(source_urls[2], True),
         _fetch_text(source_urls[3], True),
     ]
 
-    patch_content = sources[3]["content"]
-    if head_sha not in patch_content.lower():
-        raise gl.vm.UserError(f"{ERROR_EXPECTED} Pull request head SHA changed")
+    patch_content = sources[4]["content"]
 
     file_sections = _patch_sections(patch_content)
     if len(file_sections) == 0:

@@ -13,8 +13,8 @@
   },
   "reviewProtocol": {
     "contractName": "ContributionReviewProtocol",
-    "contractAddress": "0x3Ae1FC2008a99B2e39Da13DFcD5CEeAddC7d0afe",
-    "deploymentTransactionHash": "0xcf1e1fc1f3642e9feb56cdddd4d24fe481f05bec31b10fcfa60c9ad43f300fa2",
+    "contractAddress": "0x86e946765D696E08735b66Db19B65B81D323A37A",
+    "deploymentTransactionHash": "0x10554e00c46ffecd5c495b144bd82cb583d6cc196eb79599ba414b6d8d5e7685",
     "registryAddress": "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c",
     "status": "FINALIZED",
     "verification": "CODE_AND_SCHEMA_READABLE"
@@ -46,8 +46,8 @@
   "vercel": {
     "project": "gen-daves-projects/open-source-bug-bounty-judge",
     "productionUrl": "https://open-source-bug-bounty-judge.vercel.app",
-    "deploymentUrl": "https://open-source-bug-bounty-judge-bv9lzi2s8-gen-daves-projects.vercel.app",
-    "deploymentId": "dpl_F77B9raabPajw4kzihdWJR13uBeL",
+    "deploymentUrl": "https://open-source-bug-bounty-judge-aeublfk16-gen-daves-projects.vercel.app",
+    "deploymentId": "dpl_8ohGwanZuEA7qtPDWJ2H7kditX1N",
     "region": "hnd1",
     "status": "ready"
   }

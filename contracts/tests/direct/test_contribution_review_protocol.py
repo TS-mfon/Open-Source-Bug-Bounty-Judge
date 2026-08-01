@@ -98,6 +98,13 @@ def campaign_result(score=90, eligible=True):
 
 def mock_github(direct_vm):
     base = f"https://github.com/{REPOSITORY}"
+    direct_vm.mock_web(
+        rf"https://api.github.com/repos/{REPOSITORY}/pulls/123$",
+        {
+            "status": 200,
+            "body": json.dumps({"head": {"sha": HEAD_SHA}}),
+        },
+    )
     direct_vm.mock_web(rf"{base}$", {"status": 200, "body": "<html>GrantFox repository</html>"})
     direct_vm.mock_web(
         rf"{base}/issues/101$",
@@ -115,7 +122,7 @@ def mock_github(direct_vm):
         {
             "status": 200,
             "body": (
-                f"From {HEAD_SHA} Mon Sep 17 00:00:00 2001\n"
+                "From bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb Mon Sep 17 00:00:00 2001\n"
                 "Subject: [PATCH] Implement review API\n\n"
                 "diff --git a/src/review.ts b/src/review.ts\n"
                 "--- a/src/review.ts\n"
@@ -130,6 +137,43 @@ def mock_github(direct_vm):
         r"https://raw\.githubusercontent\.com/.*",
         {"status": 200, "body": "export function review() { return true; }"},
     )
+
+
+def test_review_resolves_current_head_sha_from_github_api(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
+    register_org(contract)
+    create_campaign(contract)
+    stale_candidate = candidate()
+    stale_candidate["headSha"] = "b" * 40
+    contract.add_contributions(
+        "campaign-04",
+        "grantfox",
+        json.dumps([stale_candidate]),
+        "a" * 64,
+        "campaign-add-stale-candidate",
+    )
+    mock_github(direct_vm)
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(score=90),
+    )
+
+    review_key = campaign_review_key([stale_candidate])
+    contract.request_campaign_review(
+        "review-resolved-head",
+        review_key,
+        "campaign-04",
+        "grantfox",
+        "a" * 64,
+        "campaign-review-resolved-head",
+        "",
+    )
+
+    stored = json.loads(contract.get_review("review-resolved-head"))
+    assert stored["status"] == "finalized"
+    assert stored["result"]["candidates"][0]["recommended_usdc_micros"] == "40000000"
 
 
 def deploy_protocol(direct_vm, direct_deploy, direct_alice):
