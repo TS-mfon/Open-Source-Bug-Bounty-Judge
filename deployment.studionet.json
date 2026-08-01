@@ -1,45 +1,54 @@
 {
   "network": "studionet",
   "chainId": 61999,
-  "platformWallet": "0xEd9EDd8586b20524CafA4F568413C504C9B03172",
+  "platformWallet": "0x50BC1d91FfBB110E53ffD31Ad426d559f630b26E",
   "runner": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6",
   "deployedAt": "2026-08-01",
   "registry": {
     "contractName": "OrganizationRegistry",
-    "contractAddress": "0x08B0329Ec8A8df286b30d425A47e28B7F615Aa2a",
-    "deploymentTransactionHash": "0xd4122d9fd99f804c9a882f202636ec231318e23e69ebf9cbb3b551f81873243b",
-    "executionResult": "SUCCESS",
-    "consensusResult": "MAJORITY_AGREE",
-    "validatorAgreement": "5/5"
+    "contractAddress": "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c",
+    "deploymentTransactionHash": "0xe360b7b6ecac179452616bf83c2dfc86fca0f318db0e789038b165c7624d7475",
+    "status": "FINALIZED",
+    "verification": "CODE_AND_SCHEMA_READABLE"
   },
   "reviewProtocol": {
     "contractName": "ContributionReviewProtocol",
-    "contractAddress": "0x44Cc638BC514E899827aDCdcE1Ff303D7d042382",
-    "deploymentTransactionHash": "0xfcb3a15eff277eff6b2afa94551fe2dfcc6dac0d0182a1bcfeaf358bf1209aec",
-    "registryAddress": "0x08B0329Ec8A8df286b30d425A47e28B7F615Aa2a",
-    "executionResult": "SUCCESS",
-    "consensusResult": "MAJORITY_AGREE",
-    "validatorAgreement": "5/5"
+    "contractAddress": "0x3Ae1FC2008a99B2e39Da13DFcD5CEeAddC7d0afe",
+    "deploymentTransactionHash": "0xcf1e1fc1f3642e9feb56cdddd4d24fe481f05bec31b10fcfa60c9ad43f300fa2",
+    "registryAddress": "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c",
+    "status": "FINALIZED",
+    "verification": "CODE_AND_SCHEMA_READABLE"
   },
-  "supersededReviewContracts": [
+  "supersededDeployments": [
     {
-      "contractAddress": "0x4ddE8532a701Fcd6C28C62b644E369E90a1Fc47F",
+      "registryAddress": "0x95681226675299C26b274880B4033CeD72e989Aa",
+      "reviewProtocolAddress": "0x8234AEd48b7Bd4f2695621F69D5853cA6F3775aF",
+      "platformWallet": "0x50BC1d91FfBB110E53ffD31Ad426d559f630b26E"
+    },
+    {
+      "registryAddress": "0x08B0329Ec8A8df286b30d425A47e28B7F615Aa2a",
+      "reviewProtocolAddress": "0x44Cc638BC514E899827aDCdcE1Ff303D7d042382",
+      "platformWallet": "0xEd9EDd8586b20524CafA4F568413C504C9B03172"
+    },
+    {
+      "reviewProtocolAddress": "0x4ddE8532a701Fcd6C28C62b644E369E90a1Fc47F",
       "deploymentTransactionHash": "0x95a0d084ed1838d9ffef173b8a8ca011d0b64acdb30724e3c12cc654d290ae1b"
     },
     {
-      "contractAddress": "0x1456602BD82695d5EAc97dCC41ecb761f66f2ca7",
+      "reviewProtocolAddress": "0x1456602BD82695d5EAc97dCC41ecb761f66f2ca7",
       "deploymentTransactionHash": "0x8c9c4b5fef3a1696adc94115b9782bebb8af380e6bd037569eced66b77012c72"
     },
     {
-      "contractAddress": "0x5a928B57Af64e1460ce23aB18e26B94C43FbDFCB",
+      "reviewProtocolAddress": "0x5a928B57Af64e1460ce23aB18e26B94C43FbDFCB",
       "deploymentTransactionHash": "0x8ebc070294e8969d4c358c13b46b155bdae5a060704f22d6f639759786b2cff7"
     }
   ],
   "vercel": {
     "project": "gen-daves-projects/open-source-bug-bounty-judge",
     "productionUrl": "https://open-source-bug-bounty-judge.vercel.app",
-    "deploymentUrl": "https://open-source-bug-bounty-judge-7ggkuwhgf-gen-daves-projects.vercel.app",
-    "deploymentId": "ELmQEaxAjaNuYH6UipU9LSXLegso",
+    "deploymentUrl": "https://open-source-bug-bounty-judge-bv9lzi2s8-gen-daves-projects.vercel.app",
+    "deploymentId": "dpl_F77B9raabPajw4kzihdWJR13uBeL",
+    "region": "hnd1",
     "status": "ready"
   }
 }

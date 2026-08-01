@@ -25,7 +25,9 @@ export function errorResponse(error: unknown, id: string) {
       : error instanceof ZodError
         ? new ApiError(
             "INVALID_REQUEST",
-            "Request validation failed.",
+            error.issues[0]?.message
+              ? `Request validation failed: ${error.issues[0].message}`
+              : "Request validation failed.",
             422,
             false,
             error.issues,

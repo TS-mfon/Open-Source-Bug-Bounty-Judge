@@ -10,6 +10,10 @@ import { readReview, submitCampaignAppeal } from "@/lib/genlayer";
 import { appealSchema } from "@/lib/schemas";
 import { sha256 } from "@/lib/hash";
 import { NextResponse } from "next/server";
+import {
+  pollReviewUntilSettled,
+  reviewWaitTimeout,
+} from "@/lib/review-polling";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -45,9 +49,51 @@ export async function POST(
       idempotencyKey,
       appealContext: input.appealContext,
     });
+    const statusUrl = `/api/v1/reviews/${reviewId}?transactionHash=${transactionHash}`;
+    const settled = await pollReviewUntilSettled(
+      reviewId,
+      transactionHash,
+      { timeoutMs: reviewWaitTimeout(request) },
+    );
+    if (settled.status === "finalized") {
+      return NextResponse.json({
+        reviewId,
+        supersedesReviewId: id,
+        status: settled.review.status,
+        transactionHash,
+        statusUrl,
+        review: settled.review,
+      });
+    }
+    if (settled.status === "failed") {
+      return NextResponse.json(
+        {
+          reviewId,
+          supersedesReviewId: id,
+          status: "failed",
+          transactionHash,
+          statusUrl,
+          transaction: settled.transaction,
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
-      { reviewId, supersedesReviewId: id, status: "submitted", transactionHash },
-      { status: 202 },
+      {
+        reviewId,
+        supersedesReviewId: id,
+        status: "submitted",
+        transactionHash,
+        statusUrl,
+      },
+      {
+        status: 202,
+        headers: {
+          Location: statusUrl,
+          "Retry-After": "30",
+          "Preference-Applied": "respond-async",
+        },
+      },
     );
   } catch (error) {
     return errorResponse(error, requestIdentifier);

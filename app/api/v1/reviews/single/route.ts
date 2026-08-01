@@ -5,6 +5,10 @@ import { singleReviewSchema } from "@/lib/schemas";
 import { preflightContribution } from "@/lib/github";
 import { readReviewByKey, submitSingleReview } from "@/lib/genlayer";
 import { reviewKey } from "@/lib/hash";
+import {
+  pollReviewUntilSettled,
+  reviewWaitTimeout,
+} from "@/lib/review-polling";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -49,9 +53,43 @@ export async function POST(request: Request) {
       wallet: input.wallet,
       contribution: input.contribution,
     });
+    const statusUrl = `/api/v1/reviews/${reviewId}?transactionHash=${transactionHash}`;
+    const settled = await pollReviewUntilSettled(
+      reviewId,
+      transactionHash,
+      { timeoutMs: reviewWaitTimeout(request) },
+    );
+    if (settled.status === "finalized") {
+      return NextResponse.json({
+        reviewId,
+        status: settled.review.status,
+        transactionHash,
+        statusUrl,
+        review: settled.review,
+      });
+    }
+    if (settled.status === "failed") {
+      return NextResponse.json(
+        {
+          reviewId,
+          status: "failed",
+          transactionHash,
+          statusUrl,
+          transaction: settled.transaction,
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
-      { reviewId, status: "submitted", transactionHash },
-      { status: 202 },
+      { reviewId, status: "submitted", transactionHash, statusUrl },
+      {
+        status: 202,
+        headers: {
+          Location: statusUrl,
+          "Retry-After": "30",
+          "Preference-Applied": "respond-async",
+        },
+      },
     );
   } catch (error) {
     return errorResponse(error, requestIdentifier);

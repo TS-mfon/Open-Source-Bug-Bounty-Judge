@@ -12,13 +12,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { useAutoRefresh } from "@/components/use-auto-refresh";
 import {
   generateCampaignKey,
   hashCampaignKey,
   useWallet,
 } from "@/components/wallet-provider";
+import { apiErrorMessage } from "@/lib/client-errors";
 
 type Campaign = { id: string; name: string; budget_usdc_micros: string; quality_threshold: number; status: string };
 type Review = { review_id: string; campaign_id: string; status: string; result?: { candidates?: Array<{ score: number }> } };
@@ -33,17 +35,20 @@ export default function OrganizationPage() {
   const [revealedKey, setRevealedKey] = useState("");
   const [notice, setNotice] = useState("");
 
-  useEffect(() => {
+  const loadOrganization = useCallback(async () => {
     if (!wallet || !id) return;
-    Promise.all([
+    const [campaignData, reviewData] = await Promise.all([
       fetch(`/api/app/organizations/${id}/campaigns?wallet=${wallet}`, { cache: "no-store" }).then((r) => r.json()),
       fetch(`/api/app/reviews?organizationId=${id}&wallet=${wallet}`, { cache: "no-store" }).then((r) => r.json()),
-    ]).then(([campaignData, reviewData]) => {
-      setCampaigns(campaignData.campaigns ?? []);
-      setNonce(campaignData.nonce ?? 0);
-      setReviews(reviewData.reviews ?? []);
-    });
+    ]);
+    setCampaigns(campaignData.campaigns ?? []);
+    setNonce(campaignData.nonce ?? 0);
+    setReviews(reviewData.reviews ?? []);
   }, [wallet, id]);
+  const refreshOrganization = useAutoRefresh(
+    loadOrganization,
+    Boolean(wallet && id),
+  );
 
   const budget = campaigns.reduce((sum, item) => sum + Number(item.budget_usdc_micros), 0) / 1_000_000;
 
@@ -68,13 +73,16 @@ export default function OrganizationPage() {
         },
       );
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message ?? "API key update failed");
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(result, "API key update failed"));
+      }
       if (secret) setRevealedKey(secret);
       setNotice(
         mode === "rotate"
-          ? "Key rotation submitted. Store the new key now and wait for finalization before use."
-          : "Key revocation submitted to GenLayer.",
+          ? "Key rotation submitted. Store the new key now. Auto-refreshing in 30 seconds."
+          : "Key revocation submitted. Auto-refreshing in 30 seconds.",
       );
+      window.setTimeout(() => void refreshOrganization(), 30_000);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "API key update failed.");
     } finally {

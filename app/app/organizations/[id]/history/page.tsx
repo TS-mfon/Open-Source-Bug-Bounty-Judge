@@ -3,8 +3,9 @@
 import { ArrowRight, FileClock } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { useAutoRefresh } from "@/components/use-auto-refresh";
 import { useWallet } from "@/components/wallet-provider";
 
 type Review = {
@@ -19,13 +20,17 @@ export default function HistoryPage() {
   const { wallet } = useWallet();
   const [reviews, setReviews] = useState<Review[]>([]);
 
-  useEffect(() => {
-    if (!wallet) return;
-    fetch(`/api/app/reviews?organizationId=${id}&wallet=${wallet}`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((value) => setReviews(value.reviews ?? []))
-      .catch(() => undefined);
+  const loadReviews = useCallback(async () => {
+    if (!wallet || !id) return;
+    const response = await fetch(
+      `/api/app/reviews?organizationId=${id}&wallet=${wallet}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) return;
+    const value = await response.json();
+    setReviews(value.reviews ?? []);
   }, [wallet, id]);
+  useAutoRefresh(loadReviews, Boolean(wallet && id));
 
   return (
     <AppShell organizationId={id} title="Review history" description="Finalized campaign judgments read directly from GenLayer.">

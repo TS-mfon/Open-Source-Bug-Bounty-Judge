@@ -2,8 +2,18 @@ export type AllocationCandidate = {
   id: string;
   eligible: boolean;
   score: number;
-  capUsdcMicros?: bigint;
 };
+
+export const MIN_REWARD_USDC_MICROS = 20_000_000n;
+export const MID_REWARD_USDC_MICROS = 40_000_000n;
+export const MAX_REWARD_USDC_MICROS = 60_000_000n;
+
+function rewardTier(score: number, threshold: number) {
+  const band = Math.floor(((score - threshold) * 3) / (101 - threshold));
+  if (band >= 2) return MAX_REWARD_USDC_MICROS;
+  if (band === 1) return MID_REWARD_USDC_MICROS;
+  return MIN_REWARD_USDC_MICROS;
+}
 
 export function allocateBudget(
   budgetUsdcMicros: bigint,
@@ -16,38 +26,52 @@ export function allocateBudget(
   if (qualifying.length === 0) {
     return {
       status: "admin_review" as const,
-      allocations: candidates.map((candidate) => ({ id: candidate.id, amount: 0n })),
+      allocations: candidates.map((candidate) => ({
+        id: candidate.id,
+        amount: 0n,
+        rewardTier: 0n,
+        budgetLimited: false,
+      })),
       shortlist: [...candidates].sort((a, b) => b.score - a.score).slice(0, 3),
+      totalAllocated: 0n,
+      unallocatedBudget: budgetUsdcMicros,
     };
   }
 
-  const weights = qualifying.map((candidate) => BigInt(candidate.score * candidate.score));
-  const totalWeight = weights.reduce((sum, value) => sum + value, 0n);
-  const amounts = qualifying.map((candidate, index) => {
-    const proportional = (budgetUsdcMicros * weights[index]) / totalWeight;
-    return candidate.capUsdcMicros && proportional > candidate.capUsdcMicros
-      ? candidate.capUsdcMicros
-      : proportional;
-  });
-  let remainder = budgetUsdcMicros - amounts.reduce((sum, value) => sum + value, 0n);
-  while (remainder > 0n) {
-    let distributed = false;
-    for (let index = 0; index < qualifying.length && remainder > 0n; index += 1) {
-      const cap = qualifying[index].capUsdcMicros;
-      if (cap !== undefined && amounts[index] >= cap) continue;
-      amounts[index] += 1n;
-      remainder -= 1n;
-      distributed = true;
+  const allocationMap = new Map<
+    string,
+    { amount: bigint; rewardTier: bigint; budgetLimited: boolean }
+  >();
+  let allocated = 0n;
+  for (const candidate of qualifying) {
+    const tier = rewardTier(candidate.score, threshold);
+    const remaining = budgetUsdcMicros - allocated;
+    if (remaining < MIN_REWARD_USDC_MICROS) {
+      allocationMap.set(candidate.id, {
+        amount: 0n,
+        rewardTier: tier,
+        budgetLimited: true,
+      });
+      continue;
     }
-    if (!distributed) break;
+    const amount = remaining < tier ? remaining : tier;
+    allocationMap.set(candidate.id, {
+      amount,
+      rewardTier: tier,
+      budgetLimited: amount < tier,
+    });
+    allocated += amount;
   }
-  const allocationMap = new Map(qualifying.map((candidate, index) => [candidate.id, amounts[index]]));
   return {
     status: "finalized" as const,
     allocations: candidates.map((candidate) => ({
       id: candidate.id,
-      amount: allocationMap.get(candidate.id) ?? 0n,
+      amount: allocationMap.get(candidate.id)?.amount ?? 0n,
+      rewardTier: allocationMap.get(candidate.id)?.rewardTier ?? 0n,
+      budgetLimited: allocationMap.get(candidate.id)?.budgetLimited ?? false,
     })),
     shortlist: [],
+    totalAllocated: allocated,
+    unallocatedBudget: budgetUsdcMicros - allocated,
   };
 }

@@ -2,9 +2,15 @@
 
 import { FileSearch, GitPullRequest, LoaderCircle } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { useAutoRefresh } from "@/components/use-auto-refresh";
 import { useWallet } from "@/components/wallet-provider";
+import { apiErrorMessage, validationMessage } from "@/lib/client-errors";
+import {
+  contributionSchema,
+  individualReviewIntentSchema,
+} from "@/lib/schemas";
 
 type Review = {
   review_id: string;
@@ -18,13 +24,16 @@ export default function IndividualPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
-  useEffect(() => {
+  const loadReviews = useCallback(async () => {
     if (!wallet) return;
-    fetch(`/api/app/reviews?wallet=${wallet}`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((value) => setReviews(value.reviews ?? []))
-      .catch(() => undefined);
+    const response = await fetch(`/api/app/reviews?wallet=${wallet}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+    const value = await response.json();
+    setReviews(value.reviews ?? []);
   }, [wallet]);
+  const refreshReviews = useAutoRefresh(loadReviews, Boolean(wallet));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,29 +42,50 @@ export default function IndividualPage() {
     const form = new FormData(event.currentTarget);
     try {
       const activeWallet = wallet || (await connect());
-      const intent = {
-        repository: String(form.get("repository")),
+      const candidateIntent = {
+        repository: String(form.get("repository")).trim(),
         issueNumber: Number(form.get("issueNumber")),
         pullRequestNumber: Number(form.get("pullRequestNumber")),
-        contributor: String(form.get("contributor")),
+        contributor: String(form.get("contributor")).trim(),
         contributionType: String(form.get("contributionType")),
-        stellarEvidenceUrls: String(form.get("stellarEvidenceUrl"))
-          ? [String(form.get("stellarEvidenceUrl"))]
+        stellarEvidenceUrls: String(form.get("evidenceUrl")).trim()
+          ? [String(form.get("evidenceUrl")).trim()]
           : [],
       };
+      const parsedIntent = individualReviewIntentSchema.safeParse(candidateIntent);
+      if (!parsedIntent.success) {
+        throw new Error(
+          validationMessage(parsedIntent.error.issues, "Review details are invalid."),
+        );
+      }
+      const intent = parsedIntent.data;
       const resolveResponse = await fetch("/api/app/github/resolve", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(intent),
       });
       const resolved = await resolveResponse.json();
-      if (!resolveResponse.ok) throw new Error(resolved.error?.message ?? "Unable to resolve PR");
-      const contribution = {
-        id: `single-${intent.repository.replace("/", "-")}-${intent.pullRequestNumber}`,
+      if (!resolveResponse.ok) {
+        throw new Error(apiErrorMessage(resolved, "Unable to resolve pull request"));
+      }
+      const candidateContribution = {
+        id: `single-${intent.repository
+          .replace("/", "-")
+          .replace(/[^a-zA-Z0-9:_-]/g, "-")}-${intent.pullRequestNumber}`,
         ...intent,
         contributor: intent.contributor || resolved.contributor,
         headSha: resolved.headSha,
       };
+      const parsedContribution = contributionSchema.safeParse(candidateContribution);
+      if (!parsedContribution.success) {
+        throw new Error(
+          validationMessage(
+            parsedContribution.error.issues,
+            "Resolved pull request details are invalid.",
+          ),
+        );
+      }
+      const contribution = parsedContribution.data;
       const signed = await signReview(contribution);
       const response = await fetch("/api/v1/reviews/single", {
         method: "POST",
@@ -63,8 +93,11 @@ export default function IndividualPage() {
         body: JSON.stringify({ wallet: activeWallet, ...signed, contribution }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message ?? "Review submission failed");
-      setNotice(`Review submitted: ${result.reviewId}`);
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(result, "Review submission failed"));
+      }
+      setNotice(`Review submitted: ${result.reviewId}. Auto-refreshing in 30 seconds.`);
+      window.setTimeout(() => void refreshReviews(), 30_000);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Review submission failed.");
     } finally {
@@ -83,7 +116,7 @@ export default function IndividualPage() {
             <label>Issue number<input name="issueNumber" type="number" min="1" required /></label>
             <label>Pull request number<input name="pullRequestNumber" type="number" min="1" required /></label>
             <label>Contribution type<select name="contributionType" defaultValue="code"><option value="code">Code</option><option value="documentation">Documentation</option><option value="security">Security</option><option value="infrastructure">Infrastructure</option><option value="mixed">Mixed</option></select></label>
-            <label>Stellar evidence URL<input name="stellarEvidenceUrl" type="url" placeholder="https://..." /></label>
+            <label>Evidence URL<input name="evidenceUrl" type="url" placeholder="https://..." /></label>
             <div className="form-footer"><button className="primary-button" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <FileSearch size={16} />} Resolve and review</button></div>
           </form>
         </section>

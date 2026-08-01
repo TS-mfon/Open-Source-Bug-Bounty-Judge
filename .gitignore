@@ -14,3 +14,4 @@ __pycache__
 .env*
 plan.md
 docs/GENLAYER_PROJECT_REVIEW.md
+pk.md

@@ -30,6 +30,7 @@ type WalletContextValue = {
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
+const CONNECTION_KEY = "oss-judge.wallet-connected";
 
 function provider() {
   return (window as typeof window & { ethereum?: EthereumProvider }).ethereum;
@@ -56,9 +57,28 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const ethereum = provider();
-    if (!ethereum?.on) return;
+    if (!ethereum) return;
+
+    void ethereum
+      .request({ method: "eth_accounts" })
+      .then((value) => {
+        const accounts = value as string[];
+        const account = accounts[0] ?? "";
+        if (account || window.localStorage.getItem(CONNECTION_KEY) === "true") {
+          setWallet(account);
+        }
+      })
+      .catch(() => undefined);
+
+    if (!ethereum.on) return;
     const handleAccountsChanged = (accounts: string[]) => {
-      setWallet(accounts[0] ?? "");
+      const account = accounts[0] ?? "";
+      setWallet(account);
+      if (account) {
+        window.localStorage.setItem(CONNECTION_KEY, "true");
+      } else {
+        window.localStorage.removeItem(CONNECTION_KEY);
+      }
     };
     ethereum.on("accountsChanged", handleAccountsChanged);
     return () => ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
@@ -69,7 +89,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!ethereum) throw new Error("Install an EVM-compatible wallet.");
     const accounts = (await ethereum.request({ method: "eth_requestAccounts" })) as string[];
     const account = accounts[0] ?? "";
+    if (!account) throw new Error("No wallet account was selected.");
     setWallet(account);
+    window.localStorage.setItem(CONNECTION_KEY, "true");
     return account;
   }, []);
 

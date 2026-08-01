@@ -15,6 +15,10 @@ MAX_STELLAR_LINKS = 6
 MAX_SOURCE_CHARS = 14000
 MAX_TOTAL_SOURCE_CHARS = 120000
 DEFAULT_THRESHOLD = 70
+MIN_REWARD_USDC_MICROS = 20_000_000
+MID_REWARD_USDC_MICROS = 40_000_000
+MAX_REWARD_USDC_MICROS = 60_000_000
+MIN_CAMPAIGN_BUDGET_USDC_MICROS = 5_000_000_000
 ALLOWED_SCOPES = (
     "campaigns:write",
     "reviews:create",
@@ -408,6 +412,17 @@ def _normalize_candidate_result(
     }
 
 
+def _reward_tier(score: int, threshold: int) -> int:
+    quality_margin = score - threshold
+    quality_span = 101 - threshold
+    band = (quality_margin * 3) // quality_span
+    if band >= 2:
+        return MAX_REWARD_USDC_MICROS
+    if band == 1:
+        return MID_REWARD_USDC_MICROS
+    return MIN_REWARD_USDC_MICROS
+
+
 def _apply_allocations(results: list[dict], budget: int, threshold: int) -> dict:
     qualifying = [
         result
@@ -421,6 +436,8 @@ def _apply_allocations(results: list[dict], budget: int, threshold: int) -> dict
         if "rank" not in result:
             result["rank"] = 0
         result["recommended_usdc_micros"] = "0"
+        result["reward_tier_usdc_micros"] = "0"
+        result["budget_limited"] = False
 
     if len(qualifying) == 0:
         shortlist = sorted(
@@ -430,31 +447,47 @@ def _apply_allocations(results: list[dict], budget: int, threshold: int) -> dict
             "status": "admin_review",
             "candidates": results,
             "qualifying_count": 0,
+            "paid_count": 0,
             "total_allocated_usdc_micros": "0",
+            "unallocated_budget_usdc_micros": str(budget),
             "shortlist": [result["id"] for result in shortlist],
         }
 
-    weights = [int(result["score"]) * int(result["score"]) for result in qualifying]
-    total_weight = sum(weights)
+    if budget == 0:
+        return {
+            "status": "finalized",
+            "candidates": results,
+            "qualifying_count": len(qualifying),
+            "paid_count": 0,
+            "total_allocated_usdc_micros": "0",
+            "unallocated_budget_usdc_micros": "0",
+            "shortlist": [],
+        }
+
     allocated = 0
-    for index, result in enumerate(qualifying):
-        amount = (budget * weights[index]) // total_weight
+    paid_count = 0
+    for result in qualifying:
+        desired = _reward_tier(int(result["score"]), threshold)
+        result["reward_tier_usdc_micros"] = str(desired)
+        remaining = budget - allocated
+        if remaining < MIN_REWARD_USDC_MICROS:
+            result["budget_limited"] = True
+            result["flags"].append("campaign_budget_exhausted")
+            continue
+        amount = min(desired, remaining)
+        if amount < desired:
+            result["budget_limited"] = True
+            result["flags"].append("campaign_budget_limited")
         result["recommended_usdc_micros"] = str(amount)
         allocated += amount
-    remainder = budget - allocated
-    index = 0
-    while remainder > 0:
-        current = qualifying[index % len(qualifying)]
-        current["recommended_usdc_micros"] = str(
-            int(current["recommended_usdc_micros"]) + 1
-        )
-        remainder -= 1
-        index += 1
+        paid_count += 1
     return {
         "status": "finalized",
         "candidates": results,
         "qualifying_count": len(qualifying),
-        "total_allocated_usdc_micros": str(budget),
+        "paid_count": paid_count,
+        "total_allocated_usdc_micros": str(allocated),
+        "unallocated_budget_usdc_micros": str(budget - allocated),
         "shortlist": [],
     }
 
@@ -567,13 +600,14 @@ reward activity volume alone. Cite only exact URLs fetched by the contract.
         principle=(
             "Candidate eligibility and whether each candidate meets the campaign "
             "threshold must match exactly. Candidate scores must be within 5 "
-            "points and may not cross the threshold. The ordering of qualifying "
-            "candidates must be materially consistent. Every positive material "
-            "finding must cite a URL fetched by the contract. Allocations must "
-            "sum exactly to the campaign budget when at least one candidate "
-            "qualifies, and must be zero when none qualify. Explanations may use "
-            "different wording but must agree on correctness, scope, test quality, "
-            "impact, major deficiencies, and abuse flags."
+            "points and may not cross the threshold or a 20, 40, or 60 USDC "
+            "reward-tier boundary. The exact reward tier and qualifying candidate "
+            "ordering must match. Every positive material finding must cite a URL "
+            "fetched by the contract. Positive payouts must be at least 20 USDC "
+            "and at most 60 USDC, follow rank order, and never exceed the campaign "
+            "budget. Explanations may use different wording but must agree on "
+            "correctness, scope, test quality, impact, major deficiencies, and "
+            "abuse flags."
         ),
     )
 
@@ -781,8 +815,10 @@ class ContributionReviewProtocol(gl.Contract):
             threshold = int(quality_threshold)
         except Exception:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign configuration")
-        if budget <= 0:
-            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign budget")
+        if budget < MIN_CAMPAIGN_BUDGET_USDC_MICROS:
+            raise gl.vm.UserError(
+                f"{ERROR_EXPECTED} Campaign budget must be at least 5000 USDC"
+            )
         if threshold < 50 or threshold > 95:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid quality threshold")
         rubric = _validated_rubric(_parse_json(rubric_json, "Rubric"))
@@ -1024,8 +1060,10 @@ class ContributionReviewProtocol(gl.Contract):
             budget = int(budget_usdc_micros)
         except Exception:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign budget")
-        if budget <= 0:
-            raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign budget must be positive")
+        if budget < MIN_CAMPAIGN_BUDGET_USDC_MICROS:
+            raise gl.vm.UserError(
+                f"{ERROR_EXPECTED} Campaign budget must be at least 5000 USDC"
+            )
         rubric = _validated_rubric(_parse_json(rubric_json, "Rubric"))
         self._claim_idempotency(
             organization_id + ":" + idempotency_key,
@@ -1430,6 +1468,10 @@ class ContributionReviewProtocol(gl.Contract):
         return self.campaign_review_ids.get(
             campaign_id + ":" + str(int(index)), ""
         )
+
+    @gl.public.view
+    def get_wallet_review_count(self, wallet: str) -> u256:
+        return self.wallet_review_counts.get(str(wallet).lower(), u256(0))
 
     @gl.public.view
     def get_wallet_review_id_at(self, wallet: str, index: u256) -> str:

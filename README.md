@@ -19,17 +19,17 @@ operators keep final payout authority.
 
 | Contract | Address | Deployment transaction |
 |---|---|---|
-| Organization Registry | `0x08B0329Ec8A8df286b30d425A47e28B7F615Aa2a` | `0xd4122d9fd99f804c9a882f202636ec231318e23e69ebf9cbb3b551f81873243b` |
-| Contribution Review Protocol | `0x44Cc638BC514E899827aDCdcE1Ff303D7d042382` | `0xfcb3a15eff277eff6b2afa94551fe2dfcc6dac0d0182a1bcfeaf358bf1209aec` |
+| Organization Registry | `0xb41b8a86257885A47a46428FD35886fD7E1B6f5c` | `0xe360b7b6ecac179452616bf83c2dfc86fca0f318db0e789038b165c7624d7475` |
+| Contribution Review Protocol | `0x3Ae1FC2008a99B2e39Da13DFcD5CEeAddC7d0afe` | `0xcf1e1fc1f3642e9feb56cdddd4d24fe481f05bec31b10fcfa60c9ad43f300fa2` |
 
-Both deployments finalized with `MAJORITY_AGREE` and unanimous `5/5` validator
-agreement on August 1, 2026. The exact deployment record is stored in
+Both deployments finalized and were verified by reading their deployed code and
+contract schemas on August 1, 2026. The exact deployment record is stored in
 [`deployment.studionet.json`](deployment.studionet.json).
 
 The platform relayer wallet is:
 
 ```text
-0xEd9EDd8586b20524CafA4F568413C504C9B03172
+0x50BC1d91FfBB110E53ffD31Ad426d559f630b26E
 ```
 
 ## Product Boundary
@@ -38,7 +38,7 @@ The protocol answers:
 
 1. Does each contribution satisfy the issue and campaign requirements?
 2. Which contributions meet the campaign quality threshold?
-3. How should the campaign budget be recommended across qualifying work?
+3. Which 20, 40, or 60 USDC reward tier does each qualifying fix earn?
 
 The protocol produces:
 
@@ -173,6 +173,7 @@ Campaign creation is dashboard-only. It requires:
 - Campaign name.
 - Stable campaign ID.
 - Budget in USDC.
+- A budget of at least `5,000` USDC.
 - Quality threshold from `50` to `95`.
 - A rubric whose integer weights total exactly `100`.
 
@@ -255,17 +256,22 @@ The comparative equivalence principle requires material agreement on:
 - Citation validity.
 - Allocation invariants.
 
-Allocation is deterministic after scoring:
+Reward selection is deterministic after validator scoring:
 
 ```text
-weight(candidate) = score(candidate) ^ 2
+lower quality band  = 20 USDC
+middle quality band = 40 USDC
+upper quality band  = 60 USDC
 ```
 
 Only eligible candidates at or above the quality threshold receive a
-recommendation. Integer rounding remainder is distributed deterministically in
-rank order, so qualifying allocations always sum exactly to the campaign
-budget. If nobody qualifies, allocation remains zero and the strongest three
-candidates are placed in the administrator-review shortlist.
+recommendation. The three bands are calculated relative to the campaign
+threshold, and the equivalence principle requires validators to agree on the
+exact reward tier. Recommendations consume the budget in rank order. No
+positive recommendation can be below 20 USDC or above 60 USDC; a remainder
+below 20 USDC stays unallocated. If nobody qualifies, allocation remains zero
+and the strongest three candidates are placed in the administrator-review
+shortlist.
 
 ## Duplicate And Replay Protection
 
@@ -538,8 +544,8 @@ npm install
 Create `.env.local`:
 
 ```bash
-NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x44Cc638BC514E899827aDCdcE1Ff303D7d042382
-NEXT_PUBLIC_GENLAYER_REGISTRY_ADDRESS=0x08B0329Ec8A8df286b30d425A47e28B7F615Aa2a
+NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x3Ae1FC2008a99B2e39Da13DFcD5CEeAddC7d0afe
+NEXT_PUBLIC_GENLAYER_REGISTRY_ADDRESS=0xb41b8a86257885A47a46428FD35886fD7E1B6f5c
 NEXT_PUBLIC_GENLAYER_NETWORK=studionet
 GENLAYER_PLATFORM_PRIVATE_KEY=0x...
 WEBHOOK_SIGNING_SECRET=...

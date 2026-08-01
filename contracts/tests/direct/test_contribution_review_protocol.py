@@ -167,7 +167,7 @@ def create_campaign(contract):
         "grantfox",
         "external-04",
         "Stellar Builders Sprint",
-        "1000000000",
+        "10000000000",
         70,
         "2026-07-01T00:00:00Z",
         "2026-07-20T00:00:00Z",
@@ -188,7 +188,7 @@ def create_campaign(contract):
     )
 
 
-def test_full_campaign_review_allocates_complete_budget(
+def test_campaign_review_caps_single_reward_at_sixty_usdc(
     direct_vm, direct_deploy, direct_alice
 ):
     contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
@@ -202,7 +202,10 @@ def test_full_campaign_review_allocates_complete_budget(
         "campaign-add-candidates-04",
     )
     mock_github(direct_vm)
-    direct_vm.mock_llm(r".*independent open-source contribution reward judge.*", campaign_result())
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(score=100),
+    )
 
     review_key = campaign_review_key([candidate()])
     contract.request_campaign_review(
@@ -218,12 +221,46 @@ def test_full_campaign_review_allocates_complete_budget(
     stored = json.loads(contract.get_review("review-campaign-04"))
     assert stored["status"] == "finalized"
     assert stored["result"]["qualifying_count"] == 1
-    assert stored["result"]["total_allocated_usdc_micros"] == "1000000000"
+    assert stored["result"]["total_allocated_usdc_micros"] == "60000000"
+    assert stored["result"]["unallocated_budget_usdc_micros"] == "9940000000"
+    assert stored["result"]["paid_count"] == 1
     assert (
         stored["result"]["candidates"][0]["recommended_usdc_micros"]
-        == "1000000000"
+        == "60000000"
     )
     assert contract.get_review_id_by_key(review_key) == "review-campaign-04"
+
+
+def test_campaign_budget_must_be_at_least_five_thousand_usdc(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
+    register_org(contract)
+    with direct_vm.expect_revert("Campaign budget must be at least 5000 USDC"):
+        contract.create_campaign(
+            "underfunded",
+            "grantfox",
+            "external-underfunded",
+            "Underfunded Campaign",
+            "4999999999",
+            70,
+            "2027-07-01T00:00:00Z",
+            "2027-07-20T00:00:00Z",
+            "2027-07-21T00:00:00Z",
+            "code-v1",
+            json.dumps(
+                {
+                    "correctness": 25,
+                    "tests": 20,
+                    "maintainability": 15,
+                    "scope_alignment": 15,
+                    "impact": 15,
+                    "complexity": 10,
+                }
+            ),
+            "a" * 64,
+            "underfunded-create",
+        )
 
 
 def test_duplicate_pull_request_is_rejected(direct_vm, direct_deploy, direct_alice):
@@ -370,7 +407,7 @@ def test_contract_rejects_invalid_rubric(
             "grantfox",
             "external-invalid",
             "Invalid Rubric",
-            "1000000",
+            "5000000000",
             70,
             "2027-07-01T00:00:00Z",
             "2027-07-20T00:00:00Z",
@@ -454,7 +491,7 @@ def test_idempotency_keys_are_namespaced_by_organization(
         "second-org",
         "external-second",
         "Second Campaign",
-        "2000000",
+        "5000000000",
         70,
         "2027-08-01T00:00:00Z",
         "2027-08-20T00:00:00Z",
@@ -492,3 +529,33 @@ def test_webhook_configuration_and_delivery_marks_require_authorized_callers(
     direct_vm.sender = direct_bob
     with direct_vm.expect_revert("Only platform wallet"):
         contract.mark_webhook_delivered("delivery-2")
+
+
+def test_single_review_exposes_wallet_count_and_index(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
+    contribution = candidate()
+    requester = "0x1111111111111111111111111111111111111111"
+    review_key = candidate_review_key(
+        requester,
+        "individual",
+        contribution,
+        "code-v1",
+        "single",
+    )
+    mock_github(direct_vm)
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(),
+    )
+
+    contract.request_single_review(
+        "review-single",
+        review_key,
+        requester,
+        json.dumps(contribution),
+    )
+
+    assert int(contract.get_wallet_review_count(requester.upper())) == 1
+    assert contract.get_wallet_review_id_at(requester, 0) == "review-single"

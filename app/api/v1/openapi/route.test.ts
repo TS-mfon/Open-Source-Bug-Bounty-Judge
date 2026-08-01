@@ -22,6 +22,21 @@ describe("OpenAPI document", () => {
     expect(document.paths["/reviews/{id}"].get.security).toEqual([]);
     expect(document.paths["/reviews"].post).toBeDefined();
     expect(document.paths["/campaigns"]).toBeUndefined();
-    expect(document.components.schemas.CandidateResult.properties.citations).toBeDefined();
+    expect(document.paths["/reviews/single"].post.requestBody).toBeDefined();
+    expect(document.paths["/reviews/{id}/appeals"].post.requestBody).toBeDefined();
+    expect(document.paths["/webhook-endpoints"].post.requestBody).toBeDefined();
+    expect(document.paths["/reviews"].post.responses["422"].$ref).toBe(
+      "#/components/responses/InvalidRequest",
+    );
+    expect(document.paths["/reviews"].post.responses["200"]).toBeDefined();
+    expect(document.paths["/reviews"].post.parameters).toContainEqual({
+      $ref: "#/components/parameters/PreferWait",
+    });
+    expect(document.paths["/reviews/{id}"].get.parameters).toContainEqual(
+      expect.objectContaining({ name: "wait" }),
+    );
+    expect(document.components.schemas.Contribution.properties.repository.pattern).toBeDefined();
+    expect(document.components.schemas.CandidateResult.properties.confidence_bps).toBeDefined();
+    expect(document.components.schemas.ErrorResponse).toBeDefined();
   });
 });

@@ -2,9 +2,11 @@
 
 import { ArrowRight, Building2, LoaderCircle, Plus, UserRound, Wallet } from "lucide-react";
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { useAutoRefresh } from "@/components/use-auto-refresh";
 import { useWallet } from "@/components/wallet-provider";
+import { apiErrorMessage } from "@/lib/client-errors";
 
 type ProfileResponse = {
   profile?: { default_workspace: "individual" | "organization" };
@@ -18,13 +20,15 @@ export default function WorkspacePage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
-  useEffect(() => {
+  const loadProfile = useCallback(async () => {
     if (!wallet) return;
-    fetch(`/api/app/profile?wallet=${wallet}`, { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((value) => { if (value) setData(value as ProfileResponse); })
-      .catch(() => undefined);
+    const response = await fetch(`/api/app/profile?wallet=${wallet}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+    setData((await response.json()) as ProfileResponse);
   }, [wallet]);
+  const refreshProfile = useAutoRefresh(loadProfile, Boolean(wallet));
 
   async function register(defaultWorkspace: "individual" | "organization") {
     setBusy(true);
@@ -39,8 +43,11 @@ export default function WorkspacePage() {
         body: JSON.stringify(envelope),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message ?? "Unable to register profile");
-      setNotice("Profile registration submitted to GenLayer. Refresh after finalization.");
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(result, "Unable to register profile"));
+      }
+      setNotice("Profile submitted to GenLayer. Auto-refreshing in 30 seconds.");
+      window.setTimeout(() => void refreshProfile(), 30_000);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Profile registration failed.");
     } finally {
@@ -66,8 +73,11 @@ export default function WorkspacePage() {
         body: JSON.stringify(envelope),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message ?? "Unable to create organization");
-      setNotice("Organization creation submitted. It will appear after GenLayer finalizes.");
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(result, "Unable to create organization"));
+      }
+      setNotice("Organization submitted to GenLayer. Auto-refreshing in 30 seconds.");
+      window.setTimeout(() => void refreshProfile(), 30_000);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Organization creation failed.");
     } finally {

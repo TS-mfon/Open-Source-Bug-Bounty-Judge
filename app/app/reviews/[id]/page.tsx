@@ -2,8 +2,9 @@
 
 import { ExternalLink, FileCode2, Scale, ShieldCheck } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { useAutoRefresh } from "@/components/use-auto-refresh";
 
 type Candidate = {
   id: string;
@@ -32,16 +33,20 @@ export default function ReviewDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [review, setReview] = useState<Review | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/v1/reviews/${id}`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((value) => setReview(value.review ?? null))
-      .catch(() => undefined);
+  const loadReview = useCallback(async () => {
+    if (!id) return;
+    const response = await fetch(`/api/v1/reviews/${id}`, {
+      cache: "no-store",
+    });
+    if (!response.ok && response.status !== 202) return;
+    const value = await response.json();
+    setReview(value.review ?? null);
   }, [id]);
+  useAutoRefresh(loadReview, Boolean(id));
 
   return (
     <AppShell title="Review detail" description={id}>
-      {!review ? <section className="empty-state"><FileCode2 size={28} /><h2>Review pending</h2><p>The result will appear after GenLayer consensus finalizes.</p></section> : (
+      {!review ? <section className="empty-state"><FileCode2 size={28} /><h2>Review pending</h2><p>The result will appear after GenLayer consensus finalizes. This page refreshes every 30 seconds.</p></section> : (
         <>
           <section className="metric-grid">
             <article><span>Status</span><strong>{review.status}</strong><small>Consensus result</small></article>

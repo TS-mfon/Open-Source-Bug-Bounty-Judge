@@ -3,13 +3,16 @@
 import { ArrowLeft, ArrowRight, Check, Clipboard, KeyRound, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { useAutoRefresh } from "@/components/use-auto-refresh";
 import {
   generateCampaignKey,
   hashCampaignKey,
   useWallet,
 } from "@/components/wallet-provider";
+import { apiErrorMessage, validationMessage } from "@/lib/client-errors";
+import { campaignDashboardPayloadSchema } from "@/lib/schemas";
 
 const defaultRubric = {
   correctness: 25,
@@ -35,20 +38,24 @@ export default function NewCampaignPage() {
     threshold: "70",
   });
 
-  useEffect(() => {
+  const loadNonce = useCallback(async () => {
     if (!wallet || !id) return;
-    fetch(`/api/app/organizations/${id}/campaigns?wallet=${wallet}`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((value) => setNonce(value.nonce ?? 0))
-      .catch(() => undefined);
+    const response = await fetch(
+      `/api/app/organizations/${id}/campaigns?wallet=${wallet}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) return;
+    const value = await response.json();
+    setNonce(value.nonce ?? 0);
   }, [wallet, id]);
+  useAutoRefresh(loadNonce, Boolean(wallet && id));
 
   function saveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setDetails({
-      id: String(form.get("campaignId")),
-      name: String(form.get("name")),
+      id: String(form.get("campaignId")).trim(),
+      name: String(form.get("name")).trim(),
       budget: String(form.get("budget")),
       threshold: String(form.get("threshold")),
     });
@@ -60,7 +67,7 @@ export default function NewCampaignPage() {
     setNotice("");
     try {
       const secret = generateCampaignKey();
-      const payload = {
+      const candidatePayload = {
         id: details.id,
         organizationId: id,
         name: details.name,
@@ -70,6 +77,13 @@ export default function NewCampaignPage() {
         rubric: defaultRubric,
         keyHash: await hashCampaignKey(secret),
       };
+      const parsed = campaignDashboardPayloadSchema.safeParse(candidatePayload);
+      if (!parsed.success) {
+        throw new Error(
+          validationMessage(parsed.error.issues, "Campaign details are invalid."),
+        );
+      }
+      const payload = parsed.data;
       const envelope = await signAction("campaign.create", payload, nonce);
       const response = await fetch(`/api/app/organizations/${id}/campaigns`, {
         method: "POST",
@@ -77,7 +91,9 @@ export default function NewCampaignPage() {
         body: JSON.stringify(envelope),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message ?? "Campaign creation failed");
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(result, "Campaign creation failed"));
+      }
       setApiKey(secret);
       setStep(4);
     } catch (error) {
@@ -99,11 +115,11 @@ export default function NewCampaignPage() {
 
       {step === 1 && (
         <section className="wizard-panel">
-          <div className="section-heading"><span>Step 1</span><h2>Campaign details</h2><p>These values define the review threshold and allocation pool.</p></div>
+          <div className="section-heading"><span>Step 1</span><h2>Campaign details</h2><p>Qualifying issue fixes receive a score-based recommendation from $20 to $60 USDC while budget remains.</p></div>
           <form className="form-grid" onSubmit={saveDetails}>
             <label className="full-field">Campaign name<input name="name" required defaultValue={details.name} placeholder="Stellar Builders Sprint" /></label>
             <label>Campaign ID<input name="campaignId" required defaultValue={details.id} placeholder="stellar-builders-2026" /></label>
-            <label>Budget in USDC<input name="budget" type="number" min="1" step="0.01" required defaultValue={details.budget} /></label>
+            <label>Budget in USDC<input name="budget" type="number" min="5000" step="0.01" required defaultValue={details.budget} /></label>
             <label>Quality threshold<input name="threshold" type="number" min="50" max="95" required defaultValue={details.threshold} /></label>
             <div className="form-footer"><button className="primary-button">Continue <ArrowRight size={16} /></button></div>
           </form>
@@ -130,6 +146,7 @@ export default function NewCampaignPage() {
             <div><dt>Campaign ID</dt><dd>{details.id}</dd></div>
             <div><dt>Budget</dt><dd>${Number(details.budget).toLocaleString()} USDC</dd></div>
             <div><dt>Threshold</dt><dd>{details.threshold}/100</dd></div>
+            <div><dt>Reward policy</dt><dd>$20 / $40 / $60 per qualifying fix</dd></div>
           </dl>
           <div className="wizard-actions"><button className="secondary-button" onClick={() => setStep(2)}><ArrowLeft size={16} /> Back</button><button className="primary-button" onClick={() => void createCampaign()} disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />} Sign and create</button></div>
         </section>
@@ -138,7 +155,7 @@ export default function NewCampaignPage() {
       {step === 4 && (
         <section className="wizard-panel key-reveal">
           <div className="key-icon"><KeyRound size={24} /></div>
-          <div className="section-heading"><span>Campaign submitted</span><h2>Store this API key now</h2><p>Only its SHA-256 hash is stored on-chain. The plaintext cannot be recovered.</p></div>
+          <div className="section-heading"><span>Campaign submitted</span><h2>Store this API key now</h2><p>Only its SHA-256 hash is stored on-chain. The plaintext cannot be recovered. The organization view refreshes every 30 seconds.</p></div>
           <div className="secret-field"><code>{apiKey}</code><button className="icon-button" onClick={() => void navigator.clipboard.writeText(apiKey)} aria-label="Copy API key"><Clipboard size={17} /></button></div>
           <pre className="code-block">{`curl -X POST https://open-source-bug-bounty-judge.vercel.app/api/v1/reviews \\
   -H "Authorization: Bearer ${apiKey}" \\

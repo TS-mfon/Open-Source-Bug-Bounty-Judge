@@ -57,6 +57,8 @@ export type CandidateResult = {
   confidenceBps: number;
   rank: number;
   recommendedUsdcMicros: string;
+  rewardTierUsdcMicros?: string;
+  budgetLimited?: boolean;
   summary: string;
   strengths: string[];
   deficiencies: string[];
@@ -75,7 +77,9 @@ export type StoredReview = {
   result: {
     candidates: CandidateResult[];
     qualifying_count: number;
+    paid_count?: number;
     total_allocated_usdc_micros: string;
+    unallocated_budget_usdc_micros?: string;
     explanation: string;
   };
 };

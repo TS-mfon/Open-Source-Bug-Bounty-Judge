@@ -1,10 +1,12 @@
 "use client";
 
 import { LoaderCircle, Shield, Trash2, UserPlus } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { useAutoRefresh } from "@/components/use-auto-refresh";
 import { useWallet } from "@/components/wallet-provider";
+import { apiErrorMessage } from "@/lib/client-errors";
 
 type Member = { wallet: string; role: string };
 
@@ -16,16 +18,18 @@ export default function MembersPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
-  useEffect(() => {
-    if (!wallet) return;
-    fetch(`/api/app/organizations/${id}/members?wallet=${wallet}`, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((value) => {
-        setMembers(value.members ?? []);
-        setNonce(value.nonce ?? 0);
-      })
-      .catch(() => undefined);
+  const loadMembers = useCallback(async () => {
+    if (!wallet || !id) return;
+    const response = await fetch(
+      `/api/app/organizations/${id}/members?wallet=${wallet}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) return;
+    const value = await response.json();
+    setMembers(value.members ?? []);
+    setNonce(value.nonce ?? 0);
   }, [wallet, id]);
+  const refreshMembers = useAutoRefresh(loadMembers, Boolean(wallet && id));
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,8 +48,11 @@ export default function MembersPage() {
         body: JSON.stringify(envelope),
       });
       const value = await response.json();
-      if (!response.ok) throw new Error(value.error?.message ?? "Member update failed");
-      setNotice("Membership transaction submitted to GenLayer.");
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(value, "Member update failed"));
+      }
+      setNotice("Membership submitted. Auto-refreshing in 30 seconds.");
+      window.setTimeout(() => void refreshMembers(), 30_000);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Member update failed.");
     } finally {
@@ -73,12 +80,15 @@ export default function MembersPage() {
         body: JSON.stringify(envelope),
       });
       const value = await response.json();
-      if (!response.ok) throw new Error(value.error?.message ?? "Member update failed");
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(value, "Member update failed"));
+      }
       setNotice(
         mode === "role"
-          ? "Role update submitted to GenLayer."
-          : "Member removal submitted to GenLayer.",
+          ? "Role update submitted. Auto-refreshing in 30 seconds."
+          : "Member removal submitted. Auto-refreshing in 30 seconds.",
       );
+      window.setTimeout(() => void refreshMembers(), 30_000);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Member update failed.");
     } finally {
