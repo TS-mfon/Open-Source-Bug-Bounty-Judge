@@ -12,3 +12,5 @@ __pycache__
 .gltest_cache
 *.pyc
 .env*
+plan.md
+docs/GENLAYER_PROJECT_REVIEW.md
