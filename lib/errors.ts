@@ -19,6 +19,7 @@ export function requestId(request: Request) {
 }
 
 export function errorResponse(error: unknown, id: string) {
+  const message = error instanceof Error ? error.message : "";
   const apiError =
     error instanceof ApiError
       ? error
@@ -32,6 +33,20 @@ export function errorResponse(error: unknown, id: string) {
             false,
             error.issues,
           )
+        : /all \d+ execution slots occupied|server busy/i.test(message)
+          ? new ApiError(
+              "GENLAYER_BUSY",
+              "GenLayer is temporarily busy. Retry the same idempotent request shortly.",
+              503,
+              true,
+            )
+          : /rate limit exceeded/i.test(message)
+            ? new ApiError(
+                "GENLAYER_RATE_LIMITED",
+                "GenLayer is temporarily rate limited. Retry the request later.",
+                503,
+                true,
+              )
       : new ApiError(
           "INTERNAL_ERROR",
           "Unexpected server error.",

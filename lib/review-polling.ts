@@ -68,7 +68,14 @@ export async function pollReviewUntilSettled(
 
     try {
       transaction = await dependencies.readTransaction(transactionHash);
-      if (transaction.executionResult === "FINISHED_WITH_ERROR") {
+      if (
+        transaction.status === "FINALIZED" &&
+        (transaction.executionResult === "FINISHED_WITH_ERROR" ||
+          transaction.consensusResult === "MAJORITY_DISAGREE" ||
+          transaction.consensusResult === "NO_MAJORITY" ||
+          transaction.consensusResult === "TIMEOUT" ||
+          transaction.consensusResult === "DETERMINISTIC_VIOLATION")
+      ) {
         return { status: "failed", review: null, transaction };
       }
     } catch {

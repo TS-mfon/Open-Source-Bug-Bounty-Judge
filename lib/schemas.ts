@@ -121,7 +121,9 @@ export const contributionSchema = z.object({
 });
 
 export const batchReviewSchema = z.object({
-  candidates: z.array(contributionSchema).min(1).max(12),
+  candidates: z
+    .array(contributionSchema)
+    .length(1, "Submit exactly one pull request per review request."),
   appealContext: z.string().max(4000).default(""),
 });
 

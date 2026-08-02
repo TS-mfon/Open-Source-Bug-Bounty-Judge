@@ -3,7 +3,7 @@
   "chainId": 61999,
   "platformWallet": "0x50BC1d91FfBB110E53ffD31Ad426d559f630b26E",
   "runner": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6",
-  "deployedAt": "2026-08-01",
+  "deployedAt": "2026-08-02",
   "registry": {
     "contractName": "OrganizationRegistry",
     "contractAddress": "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c",
@@ -13,13 +13,21 @@
   },
   "reviewProtocol": {
     "contractName": "ContributionReviewProtocol",
-    "contractAddress": "0x86e946765D696E08735b66Db19B65B81D323A37A",
-    "deploymentTransactionHash": "0x10554e00c46ffecd5c495b144bd82cb583d6cc196eb79599ba414b6d8d5e7685",
+    "contractAddress": "0x060CfA6EfE717b176F6F24B70E0bB455d9B8c7f5",
+    "deploymentTransactionHash": "0x82d91da37f274751c28788f230d6d16083f8b028446dd7c75d69b479eb65259c",
     "registryAddress": "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c",
     "status": "FINALIZED",
     "verification": "CODE_AND_SCHEMA_READABLE"
   },
   "supersededDeployments": [
+    {
+      "reviewProtocolAddress": "0x26c8f85A8B21b9833a1E0AE3D1b286E4Fa11A154",
+      "deploymentTransactionHash": "0xaa6da94bc6947fad25d6b5f3efd84c69ffc4c3c3ac221d65d24c7adecb1ee8ec"
+    },
+    {
+      "reviewProtocolAddress": "0x86e946765D696E08735b66Db19B65B81D323A37A",
+      "deploymentTransactionHash": "0x10554e00c46ffecd5c495b144bd82cb583d6cc196eb79599ba414b6d8d5e7685"
+    },
     {
       "registryAddress": "0x95681226675299C26b274880B4033CeD72e989Aa",
       "reviewProtocolAddress": "0x8234AEd48b7Bd4f2695621F69D5853cA6F3775aF",
@@ -46,9 +54,9 @@
   "vercel": {
     "project": "gen-daves-projects/open-source-bug-bounty-judge",
     "productionUrl": "https://open-source-bug-bounty-judge.vercel.app",
-    "deploymentUrl": "https://open-source-bug-bounty-judge-aeublfk16-gen-daves-projects.vercel.app",
-    "deploymentId": "dpl_8ohGwanZuEA7qtPDWJ2H7kditX1N",
-    "region": "hnd1",
+    "deploymentUrl": "https://open-source-bug-bounty-judge-n2yjogkr6-gen-daves-projects.vercel.app",
+    "deploymentId": "dpl_E4Djqv3yz5JQFzz3ZpJjEbMskNPQ",
+    "region": "iad1",
     "status": "ready"
   }
 }

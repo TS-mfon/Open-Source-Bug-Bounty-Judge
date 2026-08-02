@@ -2,9 +2,9 @@
 
 Open Source Bug Bounty Judge is a fully on-chain contribution review protocol
 for open-source campaigns. Organizations create campaigns with a USDC-denominated
-budget and quality threshold, then use a campaign-scoped API key to submit pull
-request candidate sets. GenLayer validators fetch the repository evidence,
-compare the implementations, score qualifying work, and store an exact reward
+budget and quality threshold, then use a campaign-scoped API key to submit one
+pull request per review. GenLayer validators fetch the repository evidence,
+inspect the implementation, score qualifying work, and store an exact reward
 allocation recommendation on-chain.
 
 The protocol does not custody funds and does not execute payouts. Campaign
@@ -20,10 +20,10 @@ operators keep final payout authority.
 | Contract | Address | Deployment transaction |
 |---|---|---|
 | Organization Registry | `0xb41b8a86257885A47a46428FD35886fD7E1B6f5c` | `0xe360b7b6ecac179452616bf83c2dfc86fca0f318db0e789038b165c7624d7475` |
-| Contribution Review Protocol | `0x86e946765D696E08735b66Db19B65B81D323A37A` | `0x10554e00c46ffecd5c495b144bd82cb583d6cc196eb79599ba414b6d8d5e7685` |
+| Contribution Review Protocol | `0x060CfA6EfE717b176F6F24B70E0bB455d9B8c7f5` | `0x82d91da37f274751c28788f230d6d16083f8b028446dd7c75d69b479eb65259c` |
 
 Both deployments finalized and were verified by reading their deployed code and
-contract schemas on August 1, 2026. The exact deployment record is stored in
+contract schemas on August 2, 2026. The exact deployment record is stored in
 [`deployment.studionet.json`](deployment.studionet.json).
 
 The platform relayer wallet is:
@@ -44,7 +44,7 @@ The protocol produces:
 
 - Evidence-backed candidate scorecards.
 - Eligibility and threshold decisions.
-- Comparative rankings.
+- A rank for the reviewed contribution.
 - Exact micro-USDC recommendations.
 - Citations to sources fetched during GenLayer execution.
 - Append-only appeal results.
@@ -71,7 +71,7 @@ Campaign client
   -> sends campaign API key + review batch
   -> stateless API hashes and verifies the key on-chain
   -> platform wallet signs the GenLayer transaction
-  -> validators fetch evidence and reach comparative consensus
+  -> validators fetch evidence and reach consensus
   -> result and indexes are stored on GenLayer
 ```
 
@@ -218,7 +218,7 @@ issues, source files, comments, tests, or documentation.
 
 ### Fetch limits
 
-- Maximum candidates per batch: `12`.
+- Each review request contains exactly one pull request.
 - Maximum changed files per candidate: `12`.
 - Maximum source characters per source: `14,000`.
 - Maximum total source characters per candidate: `120,000`.
@@ -246,15 +246,15 @@ for each candidate includes:
 - rank
 - recommended micro-USDC amount
 
-The comparative equivalence principle requires material agreement on:
+The equivalence principle requires material agreement on:
 
 - Eligibility.
 - Threshold crossing.
-- Scores within a five-point tolerance.
-- Qualifying candidate ordering.
+- Whether the recommendation is zero or positive.
+- Positive reward tiers within one adjacent `20 USDC` band.
 - Major correctness and scope findings.
 - Citation validity.
-- Allocation invariants.
+- Reward-cap and allocation invariants.
 
 Reward selection is deterministic after validator scoring:
 
@@ -342,7 +342,7 @@ record and relays the write with the platform wallet.
 
 | Method | Route | Authentication | Purpose |
 |---|---|---|---|
-| `POST` | `/reviews` | Campaign key | Submit a complete comparative batch |
+| `POST` | `/reviews` | Campaign key | Submit one pull request for review |
 | `GET` | `/reviews` | Campaign key | List reviews for the authenticated campaign |
 | `GET` | `/reviews/{id}` | Public | Read a finalized result or sanitized transaction status |
 | `POST` | `/reviews/{id}/appeals` | Campaign key | Submit an append-only appeal |
@@ -355,7 +355,7 @@ record and relays the write with the platform wallet.
 Campaign creation and membership management are intentionally absent from the
 public integration API. They are wallet-authorized dashboard operations.
 
-### Submit a comparative review
+### Submit a pull-request review
 
 ```bash
 curl -X POST \
@@ -376,6 +376,10 @@ curl -X POST \
     }]
   }'
 ```
+
+The request contains exactly one pull request. GenLayer fetches the repository,
+issue, pull-request page, and patch links directly. It does not depend on the
+GitHub JSON pull-request API response being available or correctly formatted.
 
 Accepted response:
 
@@ -544,7 +548,7 @@ npm install
 Create `.env.local`:
 
 ```bash
-NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x86e946765D696E08735b66Db19B65B81D323A37A
+NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x060CfA6EfE717b176F6F24B70E0bB455d9B8c7f5
 NEXT_PUBLIC_GENLAYER_REGISTRY_ADDRESS=0xb41b8a86257885A47a46428FD35886fD7E1B6f5c
 NEXT_PUBLIC_GENLAYER_NETWORK=studionet
 GENLAYER_PLATFORM_PRIVATE_KEY=0x...
@@ -682,7 +686,7 @@ deployment.studionet.json
 ## Current Limits
 
 - GitHub evidence must be public.
-- A review batch supports at most 12 candidates.
+- A review request supports exactly one candidate.
 - Large or binary pull requests may exceed the bounded evidence model.
 - Optional Stellar evidence is HTTPS-based rather than a dedicated Horizon or
   Soroban proof adapter.

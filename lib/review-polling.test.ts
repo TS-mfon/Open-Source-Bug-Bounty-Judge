@@ -74,6 +74,49 @@ describe("pollReviewUntilSettled", () => {
     expect(result.status).toBe("failed");
   });
 
+  it("returns a consensus disagreement immediately", async () => {
+    const result = await pollReviewUntilSettled(
+      "review-1",
+      `0x${"d".repeat(64)}`,
+      {
+        dependencies: {
+          readReview: vi.fn().mockResolvedValue(undefined),
+          readTransaction: vi.fn().mockResolvedValue({
+            status: "FINALIZED",
+            executionResult: "NOT_VOTED",
+            consensusResult: "MAJORITY_DISAGREE",
+            resultCode: 7,
+            error: null,
+          }),
+        },
+      },
+    );
+
+    expect(result.status).toBe("failed");
+  });
+
+  it("does not treat an interim consensus code as terminal", async () => {
+    const result = await pollReviewUntilSettled(
+      "review-1",
+      `0x${"e".repeat(64)}`,
+      {
+        timeoutMs: 0,
+        dependencies: {
+          readReview: vi.fn().mockResolvedValue(undefined),
+          readTransaction: vi.fn().mockResolvedValue({
+            status: "COMMITTING",
+            executionResult: "NOT_VOTED",
+            consensusResult: "NO_MAJORITY",
+            resultCode: 5,
+            error: null,
+          }),
+        },
+      },
+    );
+
+    expect(result.status).toBe("pending");
+  });
+
   it("returns a durable pending response when the wait window expires", async () => {
     let now = 0;
     const result = await pollReviewUntilSettled(

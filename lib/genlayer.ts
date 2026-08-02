@@ -700,13 +700,25 @@ export async function readTransaction(hash: `0x${string}`) {
       }>;
     };
   };
+  const resultNames: Record<number, string> = {
+    0: "IDLE",
+    1: "AGREE",
+    2: "DISAGREE",
+    3: "TIMEOUT",
+    4: "DETERMINISTIC_VIOLATION",
+    5: "NO_MAJORITY",
+    6: "MAJORITY_AGREE",
+    7: "MAJORITY_DISAGREE",
+  };
   const validatorError = raw.consensusData?.validators
     ?.map((validator) => validator.genvmResult)
     .find((result) => result?.errorDescription || result?.errorCode);
   return {
     status: transaction.statusName ?? TransactionStatus.PENDING,
     executionResult: transaction.txExecutionResultName ?? ExecutionResult.NOT_VOTED,
-    consensusResult: raw.resultName ?? null,
+    consensusResult:
+      raw.resultName ??
+      (typeof raw.result === "number" ? resultNames[raw.result] ?? null : null),
     resultCode: raw.result ?? null,
     error: validatorError
       ? {

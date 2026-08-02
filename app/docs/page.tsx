@@ -26,9 +26,9 @@ export default function DocsPage() {
           <span>API v1 · OpenAPI 3.1 · StudioNet</span>
           <h1>Review API</h1>
           <p>
-            Submit complete pull-request candidate sets for comparative GenLayer
-            review, poll consensus, read evidence-backed scorecards, and retrieve
-            capped on-chain reward recommendations.
+            Submit one pull request per GenLayer review, poll consensus, read
+            evidence-backed scorecards, and retrieve capped on-chain reward
+            recommendations.
           </p>
           <div><a href="/api/v1/openapi" className="secondary-button"><Braces size={16} /> OpenAPI document</a></div>
         </div>
@@ -37,7 +37,7 @@ export default function DocsPage() {
           <h2>Integration lifecycle</h2>
           <ol className="docs-steps">
             <li><b>1</b><span>Create a campaign in the wallet-authenticated dashboard and store the one-time API key.</span></li>
-            <li><b>2</b><span>Resolve immutable PR head SHAs and submit the entire candidate set with one idempotency key.</span></li>
+            <li><b>2</b><span>Resolve the PR head SHA and submit one pull request with one idempotency key.</span></li>
             <li><b>3</b><span>Receive the finalized result in the same response when consensus completes within 240 seconds; otherwise poll the returned status URL every 30 seconds.</span></li>
             <li><b>4</b><span>Use scorecards, citations, ranking, and the $20-$60 recommendation in your payout approval workflow.</span></li>
           </ol>
@@ -77,10 +77,10 @@ Content-Type: application/json`}</pre>
         <section id="submit">
           <div className="endpoint-title"><span className="method post">POST</span><code>/api/v1/reviews</code></div>
           <p>
-            Submits one to twelve immutable candidates under the campaign budget,
-            threshold, and rubric represented by the bearer key. The API verifies
-            GitHub access and head SHAs before the platform relayer submits the
-            GenLayer transaction.
+            Submits exactly one immutable pull-request revision under the campaign
+            budget, threshold, and rubric represented by the bearer key. The API
+            verifies GitHub access and the current head SHA before the platform
+            relayer submits the GenLayer transaction.
           </p>
           <pre className="code-block">{`curl -X POST ${base}/api/v1/reviews \\
   -H "Authorization: Bearer $OSS_JUDGE_KEY" \\

@@ -40,9 +40,9 @@ export async function GET(request: Request) {
       "/reviews": {
         post: {
           tags: ["Reviews"],
-          summary: "Submit a comparative candidate batch",
+          summary: "Submit one pull request for review",
           description:
-            "Validates one to twelve immutable GitHub pull-request revisions, rejects stale head SHAs and duplicate revision sets, submits one GenLayer transaction, and waits up to 240 seconds for the finalized on-chain result. Use Prefer: respond-async to skip waiting or Prefer: wait=N to choose a shorter wait.",
+            "Validates exactly one immutable GitHub pull-request revision, submits one GenLayer transaction, and waits up to 240 seconds for the finalized on-chain result. The contract inspects the repository, issue, pull-request page, and patch links directly. Use Prefer: respond-async to skip waiting or Prefer: wait=N to choose a shorter wait.",
           operationId: "submitReview",
           parameters: [
             { $ref: "#/components/parameters/IdempotencyKey" },
@@ -388,7 +388,8 @@ export async function GET(request: Request) {
             candidates: {
               type: "array",
               minItems: 1,
-              maxItems: 12,
+              maxItems: 1,
+              description: "Exactly one pull request per review request.",
               items: { $ref: "#/components/schemas/Contribution" },
             },
             appealContext: { type: "string", maxLength: 4000, default: "" },

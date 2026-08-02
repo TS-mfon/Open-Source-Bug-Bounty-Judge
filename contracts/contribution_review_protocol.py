@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from genlayer import *
 
 ERROR_EXPECTED = "[EXPECTED]"
@@ -212,23 +213,18 @@ def _patch_sections(patch: str) -> list[dict]:
     return sections
 
 
-def _resolve_pull_request_head(repository: str, pull_number: int) -> tuple[str, dict]:
-    source = _fetch_text(
-        _github_api(repository, "/pulls/" + str(pull_number)),
-        True,
+def _resolve_patch_head_sha(patch: str, submitted_head_sha: str) -> str:
+    # GitHub patch responses include one `From <sha>` line per commit. The last
+    # commit line is the PR head and avoids relying on the JSON API response.
+    matches = re.findall(r"(?im)^From\s+([0-9a-f]{40})\s+", patch)
+    if matches:
+        return matches[-1].lower()
+    fallback = str(submitted_head_sha).strip().lower()
+    if re.fullmatch(r"[0-9a-f]{40}", fallback):
+        return fallback
+    raise gl.vm.UserError(
+        f"{ERROR_EXTERNAL} Pull request patch did not expose a usable head SHA"
     )
-    pull = _parse_json(source["content"], "GitHub pull request response")
-    if not isinstance(pull, dict):
-        raise gl.vm.UserError(f"{ERROR_EXTERNAL} Invalid GitHub pull request response")
-    head = pull.get("head", {})
-    if not isinstance(head, dict):
-        raise gl.vm.UserError(f"{ERROR_EXTERNAL} GitHub pull request head is missing")
-    head_sha = str(head.get("sha", "")).strip().lower()
-    if len(head_sha) != 40 or any(
-        character not in "0123456789abcdef" for character in head_sha
-    ):
-        raise gl.vm.UserError(f"{ERROR_EXTERNAL} GitHub returned an invalid head SHA")
-    return head_sha, source
 
 
 def _fetch_candidate_evidence(candidate: dict) -> dict:
@@ -242,7 +238,9 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid issue or pull request number")
     if issue_number <= 0 or pull_number <= 0:
         raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid issue or pull request number")
-    head_sha, pull_api_source = _resolve_pull_request_head(repository, pull_number)
+    submitted_head_sha = str(candidate.get("headSha", "")).strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", submitted_head_sha):
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid head SHA")
 
     source_urls = [
         _github_web(repository, ""),
@@ -251,14 +249,14 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
         _github_web(repository, "/pull/" + str(pull_number) + ".patch"),
     ]
     sources = [
-        pull_api_source,
         _fetch_text(source_urls[0], True),
         _fetch_text(source_urls[1], True),
         _fetch_text(source_urls[2], True),
         _fetch_text(source_urls[3], True),
     ]
 
-    patch_content = sources[4]["content"]
+    patch_content = sources[3]["content"]
+    head_sha = _resolve_patch_head_sha(patch_content, submitted_head_sha)
 
     file_sections = _patch_sections(patch_content)
     if len(file_sections) == 0:
@@ -611,21 +609,53 @@ reward activity volume alone. Cite only exact URLs fetched by the contract.
         allocated["explanation"] = str(raw.get("explanation", "")).strip()[:3000]
         return allocated
 
-    return gl.eq_principle.prompt_comparative(
-        leader_fn,
-        principle=(
-            "Candidate eligibility and whether each candidate meets the campaign "
-            "threshold must match exactly. Candidate scores must be within 5 "
-            "points and may not cross the threshold or a 20, 40, or 60 USDC "
-            "reward-tier boundary. The exact reward tier and qualifying candidate "
-            "ordering must match. Every positive material finding must cite a URL "
-            "fetched by the contract. Positive payouts must be at least 20 USDC "
-            "and at most 60 USDC, follow rank order, and never exceed the campaign "
-            "budget. Explanations may use different wording but must agree on "
-            "correctness, scope, test quality, impact, major deficiencies, and "
-            "abuse flags."
-        ),
-    )
+    def validator_fn(leaders_res: gl.vm.Result) -> bool:
+        if not isinstance(leaders_res, gl.vm.Return):
+            return False
+        leader_result = leaders_res.calldata
+        if not isinstance(leader_result, dict):
+            return False
+        validator_result = leader_fn()
+        leader_candidates = leader_result.get("candidates", [])
+        validator_candidates = validator_result.get("candidates", [])
+        if len(leader_candidates) != 1 or len(validator_candidates) != 1:
+            return False
+        leader_candidate = leader_candidates[0]
+        validator_candidate = validator_candidates[0]
+        if not isinstance(leader_candidate, dict) or not isinstance(
+            validator_candidate, dict
+        ):
+            return False
+        if bool(leader_candidate.get("eligible", False)) != bool(
+            validator_candidate.get("eligible", False)
+        ):
+            return False
+        if bool(leader_candidate.get("meets_threshold", False)) != bool(
+            validator_candidate.get("meets_threshold", False)
+        ):
+            return False
+        try:
+            leader_tier = int(
+                leader_candidate.get("reward_tier_usdc_micros", "0")
+            )
+            validator_tier = int(
+                validator_candidate.get("reward_tier_usdc_micros", "0")
+            )
+        except Exception:
+            return False
+        allowed_tiers = (
+            0,
+            MIN_REWARD_USDC_MICROS,
+            MID_REWARD_USDC_MICROS,
+            MAX_REWARD_USDC_MICROS,
+        )
+        if leader_tier not in allowed_tiers or validator_tier not in allowed_tiers:
+            return False
+        if (leader_tier == 0) != (validator_tier == 0):
+            return False
+        return abs(leader_tier - validator_tier) <= MIN_REWARD_USDC_MICROS
+
+    return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
 
 class ContributionReviewProtocol(gl.Contract):
@@ -970,6 +1000,11 @@ class ContributionReviewProtocol(gl.Contract):
         review_id = _required_string(review_id, "review id", 128)
         review_key = _required_string(review_key, "review key", 64)
         key_hash = _required_string(key_hash, "API key hash", 64)
+        candidates = _parse_json(candidates_json, "Candidates")
+        if not isinstance(candidates, list) or len(candidates) != 1:
+            raise gl.vm.UserError(
+                f"{ERROR_EXPECTED} Exactly one pull request is allowed per review"
+            )
         record_raw = self.api_keys.get(key_hash, "")
         if record_raw == "":
             raise gl.vm.UserError(f"{ERROR_EXPECTED} API key not found")
@@ -988,13 +1023,6 @@ class ContributionReviewProtocol(gl.Contract):
         if campaign_raw == "":
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign not found")
         campaign = _parse_json(campaign_raw, "Campaign")
-        candidates = _parse_json(candidates_json, "Candidates")
-        if (
-            not isinstance(candidates, list)
-            or len(candidates) == 0
-            or len(candidates) > MAX_CAMPAIGN_CANDIDATES
-        ):
-            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid candidate batch")
         ids = set()
         revisions = set()
         for candidate in candidates:
