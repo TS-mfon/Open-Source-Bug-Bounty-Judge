@@ -182,14 +182,16 @@ def _fetch_text(url: str, required: bool = False) -> dict:
             raise gl.vm.UserError(f"{ERROR_EXTERNAL} Required source unavailable: {url}")
         return {"url": url, "status": response.status, "retrieved": False, "content": ""}
     body = response.body or b""
-    content = body.decode("utf-8", errors="replace").strip()
+    decoded = body.decode("utf-8", errors="replace").strip()
+    content = decoded[:MAX_SOURCE_CHARS]
     if required and len(content) == 0:
         raise gl.vm.UserError(f"{ERROR_EXTERNAL} Required source was empty: {url}")
     return {
         "url": url,
         "status": response.status,
         "retrieved": len(content) > 0,
-        "content": content[:MAX_SOURCE_CHARS],
+        "content": content,
+        "truncated": len(decoded) > MAX_SOURCE_CHARS,
     }
 
 
@@ -255,8 +257,16 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
         _fetch_text(source_urls[3], True),
     ]
 
+    if bool(sources[3].get("truncated", False)):
+        raise gl.vm.UserError(
+            f"{ERROR_EXTERNAL} Pull request patch is too large for complete inspection"
+        )
     patch_content = sources[3]["content"]
     head_sha = _resolve_patch_head_sha(patch_content, submitted_head_sha)
+    if head_sha != submitted_head_sha:
+        raise gl.vm.UserError(
+            f"{ERROR_EXPECTED} Submitted head SHA does not match PR patch head"
+        )
 
     file_sections = _patch_sections(patch_content)
     if len(file_sections) == 0:
@@ -347,6 +357,7 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
                 "status": source["status"],
                 "retrieved": source["retrieved"],
                 "content": content,
+                "truncated": bool(source.get("truncated", False)) or len(content) < len(str(source["content"])),
             }
         )
 
@@ -506,6 +517,27 @@ def _apply_allocations(results: list[dict], budget: int, threshold: int) -> dict
     }
 
 
+def _campaign_spent(campaign: dict) -> int:
+    try:
+        spent = int(campaign.get("spent_usdc_micros", "0"))
+    except Exception:
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign spend")
+    if spent < 0:
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign spend")
+    return spent
+
+
+def _review_budget(campaign: dict, replacement: int = 0) -> int:
+    try:
+        budget = int(campaign.get("budget_usdc_micros", "0"))
+    except Exception:
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign budget")
+    available = budget - _campaign_spent(campaign) + replacement
+    if available < 0:
+        raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign budget is overspent")
+    return available
+
+
 def _evaluate_candidates(
     candidates: list[dict],
     campaign: dict,
@@ -603,7 +635,7 @@ reward activity volume alone. Cite only exact URLs fetched by the contract.
             )
         allocated = _apply_allocations(
             normalized,
-            int(campaign.get("budget_usdc_micros", "0")),
+            _review_budget(campaign),
             threshold,
         )
         allocated["explanation"] = str(raw.get("explanation", "")).strip()[:3000]
@@ -653,7 +685,18 @@ reward activity volume alone. Cite only exact URLs fetched by the contract.
             return False
         if (leader_tier == 0) != (validator_tier == 0):
             return False
-        return abs(leader_tier - validator_tier) <= MIN_REWARD_USDC_MICROS
+        if leader_tier != validator_tier:
+            return False
+        try:
+            leader_score = int(leader_candidate.get("score", -1))
+            validator_score = int(validator_candidate.get("score", -1))
+        except Exception:
+            return False
+        if abs(leader_score - validator_score) > 5:
+            return False
+        return sorted(_string_list(leader_candidate.get("flags", []))) == sorted(
+            _string_list(validator_candidate.get("flags", []))
+        )
 
     return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
@@ -668,6 +711,7 @@ class ContributionReviewProtocol(gl.Contract):
     campaign_contributions: TreeMap[str, str]
     reviews: TreeMap[str, str]
     review_ids_by_key: TreeMap[str, str]
+    review_superseded_by: TreeMap[str, str]
     idempotency_records: TreeMap[str, str]
     webhook_endpoints: TreeMap[str, str]
     webhook_delivery_marks: TreeMap[str, bool]
@@ -882,6 +926,7 @@ class ContributionReviewProtocol(gl.Contract):
             "active_api_key_hash": key_hash,
             "created_by": actor_wallet,
             "latest_review_id": "",
+            "spent_usdc_micros": "0",
         }
         self.campaigns[campaign_id] = json.dumps(campaign, sort_keys=True)
         self.campaign_contributions[campaign_id] = "[]"
@@ -1055,6 +1100,10 @@ class ContributionReviewProtocol(gl.Contract):
             review_id,
         )
         result = _evaluate_candidates(candidates, campaign, appeal_context)
+        allocated = int(result["total_allocated_usdc_micros"])
+        campaign["spent_usdc_micros"] = str(
+            _campaign_spent(campaign) + allocated
+        )
         stored = {
             "review_id": review_id,
             "review_key": review_key,
@@ -1126,6 +1175,7 @@ class ContributionReviewProtocol(gl.Contract):
             "rubric_version": _required_string(rubric_version, "rubric version", 64),
             "rubric": rubric,
             "status": "collecting",
+            "spent_usdc_micros": "0",
         }
         self.campaigns[campaign_id] = json.dumps(stored, sort_keys=True)
         self.campaign_contributions[campaign_id] = "[]"
@@ -1240,6 +1290,8 @@ class ContributionReviewProtocol(gl.Contract):
         campaign["status"] = "reviewing"
         self.campaigns[campaign_id] = json.dumps(campaign, sort_keys=True)
         result = _evaluate_candidates(candidates, campaign, appeal_context)
+        allocated = int(result["total_allocated_usdc_micros"])
+        campaign["spent_usdc_micros"] = str(_campaign_spent(campaign) + allocated)
         stored = {
             "review_id": review_id,
             "review_key": review_key,
@@ -1247,6 +1299,7 @@ class ContributionReviewProtocol(gl.Contract):
             "organization_id": organization_id,
             "status": result["status"],
             "budget_usdc_micros": campaign["budget_usdc_micros"],
+            "candidates": candidates,
             "result": result,
             "appeal_context": appeal_context,
         }
@@ -1348,6 +1401,8 @@ class ContributionReviewProtocol(gl.Contract):
         original_raw = self.reviews.get(original_review_id, "")
         if original_raw == "":
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Original review not found")
+        if self.review_superseded_by.get(original_review_id, "") != "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Review already superseded")
         original = _parse_json(original_raw, "Original review")
         if original["organization_id"] != organization_id:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Organization mismatch")
@@ -1377,7 +1432,23 @@ class ContributionReviewProtocol(gl.Contract):
             organization_id + ":" + idempotency_key,
             review_id,
         )
-        result = _evaluate_candidates(candidates, campaign, appeal_context)
+        try:
+            replaced_allocation = int(
+                original.get("result", {}).get("total_allocated_usdc_micros", "0")
+            )
+        except Exception:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid original allocation")
+        appeal_campaign = dict(campaign)
+        appeal_campaign["spent_usdc_micros"] = str(
+            _campaign_spent(campaign) - replaced_allocation
+        )
+        if int(appeal_campaign["spent_usdc_micros"]) < 0:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid campaign spend")
+        result = _evaluate_candidates(candidates, appeal_campaign, appeal_context)
+        replacement_allocation = int(result["total_allocated_usdc_micros"])
+        campaign["spent_usdc_micros"] = str(
+            int(appeal_campaign["spent_usdc_micros"]) + replacement_allocation
+        )
         stored = {
             "review_id": review_id,
             "review_key": review_key,
@@ -1391,6 +1462,7 @@ class ContributionReviewProtocol(gl.Contract):
             "supersedes_review_id": original_review_id,
         }
         self.reviews[review_id] = json.dumps(stored, sort_keys=True)
+        self.review_superseded_by[original_review_id] = review_id
         self.review_ids_by_key[review_key] = review_id
         self.review_ids.append(review_id)
         self.review_count += u256(1)

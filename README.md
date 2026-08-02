@@ -208,9 +208,11 @@ Additional bounded context:
 - Primary CI workflow when present.
 - Up to six HTTPS Stellar or Soroban evidence URLs.
 
-The contract verifies that the exact submitted head SHA appears in the fetched
-patch. Required evidence failure causes the transaction to roll back instead of
-allowing the model to score from user-provided prose.
+The contract resolves the pull-request head SHA from the fetched patch and
+requires it to match the submitted revision identity before fetching immutable
+raw source files. A truncated patch, missing patch SHA, or SHA mismatch causes
+the transaction to roll back instead of allowing the model to score from
+incomplete or user-provided prose.
 
 All fetched text is treated as prompt-injection-capable, untrusted evidence.
 The prompt explicitly forbids following instructions embedded in repositories,
@@ -223,6 +225,9 @@ issues, source files, comments, tests, or documentation.
 - Maximum source characters per source: `14,000`.
 - Maximum total source characters per candidate: `120,000`.
 - Maximum Stellar evidence URLs: `6`.
+
+The patch itself must fit within the bounded evidence limit. This is deliberate:
+the contract does not silently review a partial diff.
 - Immediate retries are limited to temporary `5xx` responses.
 - `403` and `429` are classified as transient source-rate-limit failures.
 
@@ -251,12 +256,12 @@ The equivalence principle requires material agreement on:
 - Eligibility.
 - Threshold crossing.
 - Whether the recommendation is zero or positive.
-- Positive reward tiers within one adjacent `20 USDC` band.
+- The exact positive reward tier (`20`, `40`, or `60 USDC`).
 - Major correctness and scope findings.
 - Citation validity.
 - Reward-cap and allocation invariants.
 
-Reward selection is deterministic after validator scoring:
+Reward selection is deterministic after validator scoring and cumulative campaign spend:
 
 ```text
 lower quality band  = 20 USDC
@@ -267,7 +272,10 @@ upper quality band  = 60 USDC
 Only eligible candidates at or above the quality threshold receive a
 recommendation. The three bands are calculated relative to the campaign
 threshold, and the equivalence principle requires validators to agree on the
-exact reward tier. Recommendations consume the budget in rank order. No
+exact reward tier. Recommendations consume the campaign's remaining budget in
+rank order across all reviews. The contract stores cumulative
+`spent_usdc_micros` and will not create new positive recommendations beyond the
+campaign budget. No
 positive recommendation can be below 20 USDC or above 60 USDC; a remainder
 below 20 USDC stays unallocated. If nobody qualifies, allocation remains zero
 and the strongest three candidates are placed in the administrator-review
@@ -295,7 +303,8 @@ review kind
 
 Protection exists at both API and contract layers:
 
-- API preflight rejects stale PR head SHAs.
+- API preflight rejects stale PR head SHAs; the contract independently confirms
+  the submitted SHA against the fetched patch before using immutable raw URLs.
 - Duplicate candidate IDs are rejected.
 - Duplicate immutable revisions in one batch are rejected.
 - Existing review keys return `REVIEW_ALREADY_EXISTS`.
@@ -692,6 +701,10 @@ deployment.studionet.json
   Soroban proof adapter.
 - StudioNet source and transaction rate limits can delay reviews.
 - The platform wallet is a single relayer key.
+- Contract writes currently authenticate through the platform relayer plus
+  on-chain actor-wallet/nonce checks; GenLayer does not yet provide a supported
+  secp256k1 recovery primitive in this deployment, so the platform relayer
+  remains an operational trust boundary for user-authenticated dashboard writes.
 - Webhook delivery uses one platform HMAC secret.
 - There is no event indexer; history is read from on-chain indexes.
 - The protocol recommends allocations but does not enforce payout.

@@ -118,7 +118,7 @@ Content-Type: application/json`}</pre>
             <li>Every positive issue-fix recommendation is at least 20 USDC and at most 60 USDC.</li>
             <li>Validator-agreed scores map to exact 20, 40, or 60 USDC quality tiers relative to the campaign threshold.</li>
             <li>Validators must agree on the tier; a score tolerance cannot cross a threshold or reward-tier boundary.</li>
-            <li>Recommendations consume the campaign budget in rank order. A remainder below 20 USDC stays unallocated.</li>
+            <li>Recommendations consume the campaign&apos;s remaining budget in rank order across reviews. The on-chain campaign record exposes cumulative <code>spent_usdc_micros</code>; a remainder below 20 USDC stays unallocated.</li>
           </ul>
 
           <h3>Finalized response · 200</h3>
@@ -255,10 +255,14 @@ Content-Type: application/json`}</pre>
           <h2>Trust boundary</h2>
           <p>
             API keys authorize requests but never sign GenLayer transactions.
-            The dedicated platform wallet only relays writes. Validators
+            The dedicated platform wallet only relays writes. The contract
+            independently resolves the current PR head from its fetched patch,
+            rejects incomplete patches, and validators
             independently fetch the issue, pull request patch, changed source,
             tests, manifests, CI, and supplementary evidence before deciding the
-            score. The relayer cannot choose or alter the verdict.
+            score. The relayer cannot choose or alter the verdict, but it remains
+            the operational trust boundary for dashboard authorization because
+            user signature recovery is performed by the hosted API.
           </p>
         </section>
       </main>

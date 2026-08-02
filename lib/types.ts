@@ -41,6 +41,7 @@ export type CampaignRecord = {
   organization_id: string;
   name: string;
   budget_usdc_micros: string;
+  spent_usdc_micros: string;
   quality_threshold: number;
   rubric_version: string;
   rubric: Record<string, number>;

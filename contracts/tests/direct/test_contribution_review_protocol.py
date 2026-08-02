@@ -6,13 +6,13 @@ HEAD_SHA = "a" * 40
 REPOSITORY = "GrantChain/GrantFox"
 
 
-def candidate(candidate_id="candidate-1", pull_number=123):
+def candidate(candidate_id="candidate-1", pull_number=123, head_sha=HEAD_SHA):
     return {
         "id": candidate_id,
         "repository": REPOSITORY,
         "issueNumber": 101,
         "pullRequestNumber": pull_number,
-        "headSha": HEAD_SHA,
+        "headSha": head_sha,
         "contributor": "builder",
         "contributionType": "code",
         "stellarEvidenceUrls": [],
@@ -45,31 +45,44 @@ def candidate_review_key(
     )
 
 
-def campaign_review_key(contributions):
+def campaign_review_key(
+    contributions,
+    organization_id="grantfox",
+    campaign_id="campaign-04",
+    rubric_version="code-v1",
+):
     keys = sorted(
         candidate_review_key(
-            "grantfox",
-            "campaign-04",
+            organization_id,
+            campaign_id,
             contribution,
-            "code-v1",
+            rubric_version,
             "campaign",
         )
         for contribution in contributions
     )
-    return sha256("|".join(["grantfox", "campaign-04", "code-v1"] + keys))
+    return sha256(
+        "|".join([organization_id, campaign_id, rubric_version] + keys)
+    )
 
 
 def appeal_review_key(original_review_id, appeal_context):
     return sha256("|".join([original_review_id, "grantfox", appeal_context.strip()]))
 
 
-def campaign_result(score=90, eligible=True):
+def campaign_result(
+    score=90,
+    eligible=True,
+    candidate_id="candidate-1",
+    head_sha=HEAD_SHA,
+    flags=None,
+):
     return json.dumps(
         {
             "explanation": "The contribution was compared against the campaign rubric and repository evidence.",
             "candidates": [
                 {
-                    "id": "candidate-1",
+                    "id": candidate_id,
                     "eligible": eligible,
                     "score": score,
                     "confidence_bps": 9000,
@@ -84,10 +97,10 @@ def campaign_result(score=90, eligible=True):
                     },
                     "strengths": ["Correct implementation", "Relevant tests"],
                     "deficiencies": [],
-                    "flags": [],
+                    "flags": flags or [],
                     "citations": [
                         "https://raw.githubusercontent.com/GrantChain/GrantFox/"
-                        + HEAD_SHA
+                        + head_sha
                         + "/src/review.ts"
                     ],
                 }
@@ -96,26 +109,32 @@ def campaign_result(score=90, eligible=True):
     )
 
 
-def mock_github(direct_vm):
+def mock_github(
+    direct_vm,
+    pull_number=123,
+    issue_number=101,
+    head_sha=HEAD_SHA,
+    patch_body=None,
+):
     base = f"https://github.com/{REPOSITORY}"
     direct_vm.mock_web(rf"{base}$", {"status": 200, "body": "<html>GrantFox repository</html>"})
     direct_vm.mock_web(
-        rf"{base}/issues/101$",
+        rf"{base}/issues/{issue_number}$",
         {"status": 200, "body": "<html>Implement review API. Acceptance criteria.</html>"},
     )
     direct_vm.mock_web(
-        rf"{base}/pull/123$",
+        rf"{base}/pull/{pull_number}$",
         {
             "status": 200,
-            "body": f"<html>Pull request by builder at {HEAD_SHA}</html>",
+            "body": f"<html>Pull request by builder at {head_sha}</html>",
         },
     )
     direct_vm.mock_web(
-        rf"{base}/pull/123\.patch$",
+        rf"{base}/pull/{pull_number}\.patch$",
         {
             "status": 200,
-            "body": (
-                f"From {HEAD_SHA} Mon Sep 17 00:00:00 2001\n"
+            "body": patch_body or (
+                f"From {head_sha} Mon Sep 17 00:00:00 2001\n"
                 "Subject: [PATCH] Implement review API\n\n"
                 "diff --git a/src/review.ts b/src/review.ts\n"
                 "--- a/src/review.ts\n"
@@ -130,6 +149,52 @@ def mock_github(direct_vm):
         r"https://raw\.githubusercontent\.com/.*",
         {"status": 200, "body": "export function review() { return true; }"},
     )
+
+
+def test_review_rejects_submitted_sha_that_differs_from_patch_head(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
+    register_org(contract)
+    create_campaign(contract)
+    stale = candidate(head_sha="b" * 40)
+    contract.add_contributions(
+        "campaign-04", "grantfox", json.dumps([stale]), "a" * 64, "add-sha-mismatch"
+    )
+    mock_github(direct_vm, 123, 101, HEAD_SHA)
+    with direct_vm.expect_revert("Submitted head SHA does not match PR patch head"):
+        contract.request_campaign_review(
+            "review-sha-mismatch",
+            campaign_review_key([stale]),
+            "campaign-04",
+            "grantfox",
+            "a" * 64,
+            "review-sha-mismatch-key",
+            "",
+        )
+
+
+def test_review_rejects_truncated_pull_request_patch(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
+    register_org(contract)
+    create_campaign(contract)
+    large_patch = f"From {HEAD_SHA} Mon Sep 17 00:00:00 2001\n" + ("x" * 15000)
+    contract.add_contributions(
+        "campaign-04", "grantfox", json.dumps([candidate()]), "a" * 64, "add-large-patch"
+    )
+    mock_github(direct_vm, patch_body=large_patch)
+    with direct_vm.expect_revert("Pull request patch is too large"):
+        contract.request_campaign_review(
+            "review-large-patch",
+            campaign_review_key([candidate()]),
+            "campaign-04",
+            "grantfox",
+            "a" * 64,
+            "review-large-patch-key",
+            "",
+        )
 
 
 def test_review_uses_pr_patch_and_links_without_github_json_api(
@@ -250,6 +315,42 @@ def create_campaign(contract):
     )
 
 
+def create_batch_campaign_state(contract, budget="5000000000"):
+    campaign = {
+        "id": "campaign-04",
+        "organization_id": "grantfox",
+        "name": "Dashboard Campaign",
+        "budget_usdc_micros": budget,
+        "spent_usdc_micros": "0",
+        "quality_threshold": 70,
+        "rubric_version": "code-v1",
+        "rubric": {
+            "correctness": 25,
+            "tests": 20,
+            "maintainability": 15,
+            "scope_alignment": 15,
+            "impact": 15,
+            "complexity": 10,
+        },
+        "status": "active",
+        "active_api_key_hash": "b" * 64,
+        "created_by": "0x1111111111111111111111111111111111111111",
+        "latest_review_id": "",
+    }
+    contract.campaigns["campaign-04"] = json.dumps(campaign, sort_keys=True)
+    contract.api_keys["b" * 64] = json.dumps(
+        {
+            "organization_id": "grantfox",
+            "campaign_id": "campaign-04",
+            "scopes": ["reviews:create", "reviews:read", "appeals:create"],
+            "active": True,
+            "usage_count": 0,
+            "max_requests": 10000,
+        },
+        sort_keys=True,
+    )
+
+
 def test_campaign_review_caps_single_reward_at_sixty_usdc(
     direct_vm, direct_deploy, direct_alice
 ):
@@ -290,7 +391,62 @@ def test_campaign_review_caps_single_reward_at_sixty_usdc(
         stored["result"]["candidates"][0]["recommended_usdc_micros"]
         == "60000000"
     )
+    campaign = json.loads(contract.get_campaign("campaign-04"))
+    assert campaign["spent_usdc_micros"] == "60000000"
     assert contract.get_review_id_by_key(review_key) == "review-campaign-04"
+
+
+def test_batch_reviews_consume_campaign_budget_cumulatively(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
+    create_batch_campaign_state(contract)
+    first = candidate("candidate-1", 123, HEAD_SHA)
+    second_sha = "b" * 40
+    second = candidate("candidate-2", 124, second_sha)
+    mock_github(direct_vm, 123, 101, HEAD_SHA)
+    mock_github(direct_vm, 124, 101, second_sha)
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(score=100, candidate_id="candidate-1"),
+    )
+
+    contract.request_batch_review(
+        "review-batch-1",
+        campaign_review_key([first]),
+        json.dumps([first]),
+        "b" * 64,
+        "batch-review-1",
+        "",
+    )
+
+    direct_vm.clear_mocks()
+    mock_github(direct_vm, 124, 101, second_sha)
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(
+            score=100,
+            candidate_id="candidate-2",
+            head_sha=second_sha,
+        ),
+    )
+    contract.request_batch_review(
+        "review-batch-2",
+        campaign_review_key([second]),
+        json.dumps([second]),
+        "b" * 64,
+        "batch-review-2",
+        "",
+    )
+
+    first_review = json.loads(contract.get_review("review-batch-1"))
+    second_review = json.loads(contract.get_review("review-batch-2"))
+    campaign = json.loads(contract.get_campaign("campaign-04"))
+    assert first_review["result"]["total_allocated_usdc_micros"] == "60000000"
+    assert first_review["result"]["unallocated_budget_usdc_micros"] == "4940000000"
+    assert second_review["result"]["total_allocated_usdc_micros"] == "60000000"
+    assert second_review["result"]["unallocated_budget_usdc_micros"] == "4880000000"
+    assert campaign["spent_usdc_micros"] == "120000000"
 
 
 def test_campaign_budget_must_be_at_least_five_thousand_usdc(
@@ -354,7 +510,10 @@ def test_duplicate_review_key_is_rejected(
         "campaign-add-candidates-04",
     )
     mock_github(direct_vm)
-    direct_vm.mock_llm(r".*independent open-source contribution reward judge.*", campaign_result())
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(score=100),
+    )
     review_key = campaign_review_key([candidate()])
     contract.request_campaign_review(
         "review-campaign-04",
@@ -520,6 +679,12 @@ def test_appeal_creates_revision_without_overwriting_original(
     appeal_context = (
         "Re-evaluate the same immutable revision with the clarified acceptance criteria."
     )
+    direct_vm.clear_mocks()
+    mock_github(direct_vm)
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(score=75),
+    )
     contract.request_campaign_appeal(
         "review-appeal",
         appeal_review_key("review-original", appeal_context),
@@ -530,9 +695,26 @@ def test_appeal_creates_revision_without_overwriting_original(
         appeal_context,
     )
     appealed = json.loads(contract.get_review("review-appeal"))
+    campaign = json.loads(contract.get_campaign("campaign-04"))
     assert contract.get_review("review-original") == original_before
     assert appealed["supersedes_review_id"] == "review-original"
-    assert json.loads(contract.get_campaign("campaign-04"))["latest_review_id"] == "review-appeal"
+    assert appealed["result"]["total_allocated_usdc_micros"] == "20000000"
+    assert campaign["spent_usdc_micros"] == "20000000"
+    assert campaign["latest_review_id"] == "review-appeal"
+
+    second_context = (
+        "Try to supersede the same original review again with different context."
+    )
+    with direct_vm.expect_revert("Review already superseded"):
+        contract.request_campaign_appeal(
+            "review-appeal-duplicate",
+            appeal_review_key("review-original", second_context),
+            "review-original",
+            "grantfox",
+            "a" * 64,
+            "campaign-review-appeal-duplicate",
+            second_context,
+        )
 
 
 def test_idempotency_keys_are_namespaced_by_organization(

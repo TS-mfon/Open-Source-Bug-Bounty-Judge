@@ -631,7 +631,11 @@ export async function GET(request: Request) {
           type: "object",
           required: ["campaign", "apiKey"],
           properties: {
-            campaign: { type: ["object", "null"], additionalProperties: true },
+            campaign: {
+              type: ["object", "null"],
+              additionalProperties: true,
+            description: "Campaign state includes budget_usdc_micros and cumulative spent_usdc_micros. Positive recommendations consume remaining budget across reviews; appeals replace the superseded allocation.",
+            },
             apiKey: {
               type: "object",
               required: ["usageCount", "maxRequests"],

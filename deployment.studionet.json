@@ -13,13 +13,18 @@
   },
   "reviewProtocol": {
     "contractName": "ContributionReviewProtocol",
-    "contractAddress": "0x060CfA6EfE717b176F6F24B70E0bB455d9B8c7f5",
-    "deploymentTransactionHash": "0x82d91da37f274751c28788f230d6d16083f8b028446dd7c75d69b479eb65259c",
+    "contractAddress": "0xa65cDB62A2eA1F058991e0A15040916b8BdEb2B7",
+    "deploymentTransactionHash": "0xfd7fc035699950e932fa628383d9504bd707243df452e858bea1fd34387d185d",
     "registryAddress": "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c",
     "status": "FINALIZED",
     "verification": "CODE_AND_SCHEMA_READABLE"
   },
   "supersededDeployments": [
+    {
+      "reviewProtocolAddress": "0xE4f356EE578796f55C60e09660a0413709Fd73d4",
+      "deploymentTransactionHash": "0xcba166b3ef36f656d127489934eac2b6464db2ca85d1f9c321b0af4904919298",
+      "note": "Superseded after migration attempt created an API-key record before campaign initialization; do not use."
+    },
     {
       "reviewProtocolAddress": "0x26c8f85A8B21b9833a1E0AE3D1b286E4Fa11A154",
       "deploymentTransactionHash": "0xaa6da94bc6947fad25d6b5f3efd84c69ffc4c3c3ac221d65d24c7adecb1ee8ec"
@@ -51,11 +56,18 @@
       "deploymentTransactionHash": "0x8ebc070294e8969d4c358c13b46b155bdae5a060704f22d6f639759786b2cff7"
     }
   ],
+  "migration": {
+    "targetContractAddress": "0xa65cDB62A2eA1F058991e0A15040916b8BdEb2B7",
+    "campaignId": "test-test",
+    "organizationId": "dave-01",
+    "transactionHash": "0x590e06aed4216aa3e34ac74e5a7c660c1fb774b7dec934b6102e5ed8a34f6b2c",
+    "status": "SUBMITTED_RPC_RATE_LIMITED_BEFORE_FINAL_RECEIPT"
+  },
   "vercel": {
     "project": "gen-daves-projects/open-source-bug-bounty-judge",
     "productionUrl": "https://open-source-bug-bounty-judge.vercel.app",
-    "deploymentUrl": "https://open-source-bug-bounty-judge-n2yjogkr6-gen-daves-projects.vercel.app",
-    "deploymentId": "dpl_E4Djqv3yz5JQFzz3ZpJjEbMskNPQ",
+    "deploymentUrl": "https://open-source-bug-bounty-judge-8fs6pewfq-gen-daves-projects.vercel.app",
+    "deploymentId": "dpl_5725T33Du4oNvsYBZZ6EWGmMDEFs",
     "region": "iad1",
     "status": "ready"
   }

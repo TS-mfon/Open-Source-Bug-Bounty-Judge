@@ -22,7 +22,14 @@ import {
 } from "@/components/wallet-provider";
 import { apiErrorMessage } from "@/lib/client-errors";
 
-type Campaign = { id: string; name: string; budget_usdc_micros: string; quality_threshold: number; status: string };
+type Campaign = {
+  id: string;
+  name: string;
+  budget_usdc_micros: string;
+  spent_usdc_micros?: string;
+  quality_threshold: number;
+  status: string;
+};
 type Review = { review_id: string; campaign_id: string; status: string; result?: { candidates?: Array<{ score: number }> } };
 
 export default function OrganizationPage() {
@@ -108,7 +115,12 @@ export default function OrganizationPage() {
           {campaigns.length ? campaigns.map((campaign) => (
             <article key={campaign.id}>
               <div><strong>{campaign.name}</strong><span>{campaign.id} · threshold {campaign.quality_threshold}</span></div>
-              <b>${(Number(campaign.budget_usdc_micros) / 1_000_000).toLocaleString()}</b>
+              <b>
+                ${(Number(campaign.budget_usdc_micros) / 1_000_000).toLocaleString()}
+                <small>
+                  {((Number(campaign.budget_usdc_micros) - Number(campaign.spent_usdc_micros ?? 0)) / 1_000_000).toLocaleString()} USDC remaining
+                </small>
+              </b>
               <div className="row-actions">
                 <button
                   className="icon-button"
