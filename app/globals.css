@@ -163,6 +163,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .data-list > a div, .data-list > article div { min-width: 0; margin-right: auto; }
 .data-list strong, .data-list span { display: block; }
 .data-list span { margin-top: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.data-list .budget-ratio { margin-top: 0; color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.data-list article > b { min-width: 152px; text-align: right; font-weight: 700; }
+.data-list article > b small { margin-top: 5px; color: var(--muted); font-size: 10px; font-weight: 400; white-space: nowrap; }
 .row-actions, .member-actions { display: flex !important; align-items: center; gap: 7px; margin: 0 !important; }
 .danger-button { color: #ff8a8a !important; }
 .row-score { display: flex !important; align-items: center; gap: 8px; color: var(--text) !important; font-size: 14px !important; }

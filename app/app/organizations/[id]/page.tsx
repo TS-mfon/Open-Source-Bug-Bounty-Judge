@@ -82,6 +82,12 @@ export default function OrganizationPage() {
 
   const budget = campaigns.reduce((sum, item) => sum + Number(item.budget_usdc_micros), 0) / 1_000_000;
 
+  function formatUsdcMicros(value: string | number) {
+    return (Number(value) / 1_000_000).toLocaleString("en-US", {
+      maximumFractionDigits: 2,
+    });
+  }
+
   const verifyRotatedKey = useCallback(async (pending: NonNullable<typeof pendingKey>) => {
     try {
       const response = await fetch(
@@ -176,10 +182,10 @@ export default function OrganizationPage() {
             <article key={campaign.id}>
               <div><strong>{campaign.name}</strong><span>{campaign.id} · threshold {campaign.quality_threshold}</span></div>
               <b>
-                ${(Number(campaign.budget_usdc_micros) / 1_000_000).toLocaleString()}
-                <small>
-                  {((Number(campaign.budget_usdc_micros) - Number(campaign.spent_usdc_micros ?? 0)) / 1_000_000).toLocaleString()} USDC remaining
-                </small>
+                <span className="budget-ratio">
+                  {formatUsdcMicros(Number(campaign.budget_usdc_micros) - Number(campaign.spent_usdc_micros ?? 0))} / {formatUsdcMicros(campaign.budget_usdc_micros)}
+                </span>
+                <small>USDC remaining</small>
               </b>
               <div className="row-actions">
                 <button

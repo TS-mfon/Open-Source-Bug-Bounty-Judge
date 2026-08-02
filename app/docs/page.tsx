@@ -11,9 +11,11 @@ export default function DocsPage() {
         <nav>
           <a href="#overview">Overview</a>
           <a href="#authentication">Authentication</a>
+          <a href="#quickstart">Quickstart</a>
           <a href="#submit">Submit review</a>
           <a href="#lifecycle">Lifecycle</a>
           <a href="#read">Read data</a>
+          <a href="#integration">Integration guide</a>
           <a href="#appeals">Appeals</a>
           <a href="#webhooks">Webhooks</a>
           <a href="#errors">Errors</a>
@@ -37,7 +39,7 @@ export default function DocsPage() {
           <h2>Integration lifecycle</h2>
           <ol className="docs-steps">
             <li><b>1</b><span>Create a campaign in the wallet-authenticated dashboard and store the one-time API key.</span></li>
-            <li><b>2</b><span>Resolve the PR head SHA and submit one pull request with one idempotency key.</span></li>
+            <li><b>2</b><span>Submit one pull request with one idempotency key. The API resolves the current PR head SHA automatically.</span></li>
             <li><b>3</b><span>Receive the finalized result in the same response when consensus completes within 240 seconds; otherwise poll the returned status URL every 30 seconds.</span></li>
             <li><b>4</b><span>Use scorecards, citations, ranking, and the $20-$60 recommendation in your payout approval workflow.</span></li>
           </ol>
@@ -72,6 +74,47 @@ Content-Type: application/json`}</pre>
             <li>Reuse the same value only when retrying the same logical request after transport uncertainty.</li>
             <li>Use a new value when any candidate revision or appeal context changes.</li>
           </ul>
+        </section>
+
+        <section id="quickstart">
+          <div className="doc-icon"><Braces size={19} /></div>
+          <h2>Quickstart</h2>
+          <p>
+            The smallest integration sends a GitHub pull request URL and its
+            linked issue number. You do not need to find or submit a commit SHA.
+            The API resolves the repository, pull request number, author, and
+            immutable current revision before submitting the GenLayer request.
+          </p>
+          <pre className="code-block">{`export async function reviewPullRequest({ apiKey, pullRequestUrl, issueNumber }) {
+  const response = await fetch(
+    "${base}/api/v1/reviews",
+    {
+      method: "POST",
+      headers: {
+        Authorization: \`Bearer \${apiKey}\`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": \`campaign-\${issueNumber}-review-01\`,
+        Prefer: "respond-async"
+      },
+      body: JSON.stringify({
+        candidates: [{
+          pullRequestUrl,
+          issueNumber,
+          contributionType: "code"
+        }]
+      })
+    }
+  );
+
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? "Review failed");
+  return body;
+}`}</pre>
+          <p>
+            Reuse the same idempotency key only when retrying the exact same
+            logical request after transport uncertainty. Use a new key for a
+            different PR, issue, or revision.
+          </p>
         </section>
 
         <section id="submit">
@@ -165,6 +208,18 @@ Content-Type: application/json`}</pre>
             <div><code>200 finalized</code><span>The canonical on-chain review is available.</span></div>
             <div><code>200 failed</code><span>Inspect <code>transaction.error</code>, correct retryable evidence/source failures, then use a new idempotency key.</span></div>
           </div>
+          <h3>What happens during a review</h3>
+          <ol className="docs-steps">
+            <li><b>1</b><span>The API authenticates the campaign key and validates the one-PR request.</span></li>
+            <li><b>2</b><span>GitHub is queried for the current PR head, author, repository, issue, and pull request metadata.</span></li>
+            <li><b>3</b><span>The platform wallet submits the resolved immutable candidate to GenLayer.</span></li>
+            <li><b>4</b><span>Validators independently fetch the repository, issue, PR page, patch, changed source, tests, manifests, CI, and allowed supplementary evidence.</span></li>
+            <li><b>5</b><span>Consensus compares eligibility, threshold status, reward tier, and bounded score variance before storing the result on-chain.</span></li>
+          </ol>
+          <p>
+            The platform does not make payouts. The recommendation is an
+            auditable input for your organization&apos;s own reward workflow.
+          </p>
         </section>
 
         <section id="read">
@@ -186,6 +241,53 @@ Content-Type: application/json`}</pre>
           </p>
           <pre className="code-block">{`curl ${base}/api/v1/campaign \\
   -H "Authorization: Bearer $OSS_JUDGE_KEY"`}</pre>
+        </section>
+
+        <section id="integration">
+          <div className="doc-icon"><RefreshCw size={19} /></div>
+          <h2>Integration guide</h2>
+          <h3>Recommended queue worker</h3>
+          <p>
+            Process campaign PRs through a durable queue. Keep one review write
+            in flight per campaign when practical, store the returned review ID
+            and transaction hash, and poll until the review is finalized or the
+            transaction fails. This keeps budget allocation order predictable
+            and avoids duplicate work.
+          </p>
+          <pre className="code-block">{`async function waitForReview(reviewId, transactionHash) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const response = await fetch(
+      \`${base}/api/v1/reviews/\${reviewId}?transactionHash=\${transactionHash}\`
+    );
+    const body = await response.json();
+
+    if (body.status === "finalized") return body.review;
+    if (body.status === "failed") {
+      throw new Error(body.transaction?.error?.message ?? "GenLayer review failed");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
+  }
+  throw new Error("Review is still pending; continue polling from a worker");
+}`}</pre>
+          <h3>Result fields to persist</h3>
+          <div className="field-table">
+            <div><code>reviewId</code><span>Stable on-chain review identifier.</span></div>
+            <div><code>transactionHash</code><span>GenLayer transaction used to submit and poll consensus.</span></div>
+            <div><code>candidates[].score</code><span>Normalized 0-100 quality score.</span></div>
+            <div><code>candidates[].eligible</code><span>Whether the contribution passed the campaign eligibility decision.</span></div>
+            <div><code>candidates[].recommended_usdc_micros</code><span>Suggested allocation in micro-USDC. Divide by 1,000,000 to display USDC.</span></div>
+            <div><code>candidates[].citations</code><span>Exact fetched GitHub or supplementary evidence URLs supporting the judgment.</span></div>
+            <div><code>review.result.explanation</code><span>Campaign-level comparative explanation returned by validators.</span></div>
+          </div>
+          <h3>Operational rules</h3>
+          <ul className="docs-list">
+            <li>Never put the campaign API key in browser code, public repositories, or client-side logs.</li>
+            <li>Use HTTPS and redact authorization headers from observability systems.</li>
+            <li>Store the review ID, transaction hash, resolved head SHA, status, and final result for auditability.</li>
+            <li>Retry only errors marked retryable. Reuse the same idempotency key for transport retries.</li>
+            <li>Do not treat a 202 response as a final judgment; poll the returned status URL.</li>
+          </ul>
         </section>
 
         <section id="appeals">
@@ -240,7 +342,7 @@ Content-Type: application/json`}</pre>
             <div><code>401</code><span>Missing, revoked, invalid campaign key, or invalid wallet signature.</span></div>
             <div><code>403</code><span>The campaign key lacks the required scope.</span></div>
             <div><code>404</code><span>Campaign, review, issue, repository, or pull request was not found.</span></div>
-            <div><code>409</code><span>Duplicate immutable revision, stale head SHA, or idempotency conflict.</span></div>
+            <div><code>409</code><span>Duplicate immutable revision, optional stale head-SHA guard mismatch, or idempotency conflict.</span></div>
             <div><code>422</code><span>Field validation failed or required evidence is unavailable.</span></div>
             <div><code>502</code><span>GitHub or another evidence source returned an invalid response.</span></div>
             <div><code>503</code><span>Retryable GitHub, StudioNet, or source-rate-limit failure.</span></div>
@@ -253,8 +355,8 @@ Content-Type: application/json`}</pre>
           <p>
             API keys authorize requests but never sign GenLayer transactions.
             The dedicated platform wallet only relays writes. The contract
-            independently resolves the current PR head from its fetched patch,
-            rejects incomplete patches, and validators
+            receives the immutable PR head resolved by the API, rejects
+            incomplete patches, and validators
             independently fetch the issue, pull request patch, changed source,
             tests, manifests, CI, and supplementary evidence before deciding the
             score. The relayer cannot choose or alter the verdict, but it remains
