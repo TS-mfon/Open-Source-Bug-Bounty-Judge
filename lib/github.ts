@@ -1,20 +1,27 @@
 import { ApiError } from "./errors";
 import type { ContributionInput } from "./types";
+import type { z } from "zod";
+import type { reviewCandidateIntentSchema } from "./schemas";
 
 const headers = {
   Accept: "application/vnd.github+json",
   "User-Agent": "OpenSourceBugBountyJudge/1.0",
 };
 
-export async function preflightContribution(contribution: ContributionInput) {
+export async function preflightContribution(
+  contribution: ContributionInput,
+  options: { skipPullRequest?: boolean } = {},
+) {
   const base = `https://api.github.com/repos/${contribution.repository}`;
   const [repository, issue, pull] = await Promise.all([
     fetch(base, { headers, cache: "no-store" }),
     fetch(`${base}/issues/${contribution.issueNumber}`, { headers, cache: "no-store" }),
-    fetch(`${base}/pulls/${contribution.pullRequestNumber}`, {
-      headers,
-      cache: "no-store",
-    }),
+    options.skipPullRequest
+      ? Promise.resolve(null)
+      : fetch(`${base}/pulls/${contribution.pullRequestNumber}`, {
+          headers,
+          cache: "no-store",
+        }),
   ]);
 
   for (const [name, response] of [
@@ -22,6 +29,7 @@ export async function preflightContribution(contribution: ContributionInput) {
     ["issue", issue],
     ["pull request", pull],
   ] as const) {
+    if (!response) continue;
     if (response.status === 404) {
       throw new ApiError("EVIDENCE_NOT_FOUND", `GitHub ${name} was not found.`, 422);
     }
@@ -43,6 +51,7 @@ export async function preflightContribution(contribution: ContributionInput) {
     }
   }
 
+  if (!pull) return { pullAuthor: contribution.contributor };
   const pullData = (await pull.json()) as {
     head?: { sha?: string };
     user?: { login?: string };
@@ -90,4 +99,38 @@ export async function resolvePullRequestHead(
     throw new ApiError("INVALID_GITHUB_RESPONSE", "GitHub returned an invalid head SHA.", 502);
   }
   return { headSha, contributor: pull.user?.login ?? "" };
+}
+
+export type ReviewCandidateIntent = z.infer<typeof reviewCandidateIntentSchema>;
+
+export async function resolveReviewCandidate(input: ReviewCandidateIntent) {
+  let repository = input.repository ?? "";
+  let pullRequestNumber = input.pullRequestNumber ?? 0;
+  if (input.pullRequestUrl) {
+    const parsed = new URL(input.pullRequestUrl);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    repository = `${parts[0]}/${parts[1]}`;
+    pullRequestNumber = Number(parts[3]);
+  }
+  const resolved = await resolvePullRequestHead(repository, pullRequestNumber);
+  if (input.headSha && input.headSha.toLowerCase() !== resolved.headSha.toLowerCase()) {
+    throw new ApiError(
+      "HEAD_SHA_MISMATCH",
+      "The supplied head SHA does not match the current pull request revision.",
+      409,
+      false,
+      { currentHeadSha: resolved.headSha },
+    );
+  }
+  const id = input.id ?? `pr-${repository.replace("/", "-")}-${pullRequestNumber}`;
+  return {
+    id,
+    repository,
+    issueNumber: input.issueNumber,
+    pullRequestNumber,
+    headSha: resolved.headSha,
+    contributor: input.contributor || resolved.contributor,
+    contributionType: input.contributionType,
+    stellarEvidenceUrls: input.stellarEvidenceUrls,
+  } satisfies ContributionInput;
 }

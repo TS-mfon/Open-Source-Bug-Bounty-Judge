@@ -9,6 +9,9 @@ import {
   Plus,
   RotateCw,
   Users,
+  LoaderCircle,
+  Check,
+  TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -29,6 +32,7 @@ type Campaign = {
   spent_usdc_micros?: string;
   quality_threshold: number;
   status: string;
+  active_api_key_hash: string;
 };
 type Review = { review_id: string; campaign_id: string; status: string; result?: { candidates?: Array<{ score: number }> } };
 
@@ -41,16 +45,35 @@ export default function OrganizationPage() {
   const [busyCampaign, setBusyCampaign] = useState("");
   const [revealedKey, setRevealedKey] = useState("");
   const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [pendingKey, setPendingKey] = useState<{
+    campaignId: string;
+    secret: string;
+    keyHash: string;
+    transactionHash: string;
+    status: "pending" | "failed";
+  } | null>(null);
 
   const loadOrganization = useCallback(async () => {
     if (!wallet || !id) return;
-    const [campaignData, reviewData] = await Promise.all([
-      fetch(`/api/app/organizations/${id}/campaigns?wallet=${wallet}`, { cache: "no-store" }).then((r) => r.json()),
-      fetch(`/api/app/reviews?organizationId=${id}&wallet=${wallet}`, { cache: "no-store" }).then((r) => r.json()),
-    ]);
-    setCampaigns(campaignData.campaigns ?? []);
-    setNonce(campaignData.nonce ?? 0);
-    setReviews(reviewData.reviews ?? []);
+    setLoadError("");
+    try {
+      const [campaignResponse, reviewResponse] = await Promise.all([
+        fetch(`/api/app/organizations/${id}/campaigns?wallet=${wallet}`, { cache: "no-store" }),
+        fetch(`/api/app/reviews?organizationId=${id}&wallet=${wallet}`, { cache: "no-store" }),
+      ]);
+      const [campaignData, reviewData] = await Promise.all([campaignResponse.json(), reviewResponse.json()]);
+      if (!campaignResponse.ok) throw new Error(apiErrorMessage(campaignData, "Campaigns could not be loaded"));
+      if (!reviewResponse.ok) throw new Error(apiErrorMessage(reviewData, "Reviews could not be loaded"));
+      setCampaigns(campaignData.campaigns ?? []);
+      setNonce(campaignData.nonce ?? 0);
+      setReviews(reviewData.reviews ?? []);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Organization data could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
   }, [wallet, id]);
   const refreshOrganization = useAutoRefresh(
     loadOrganization,
@@ -59,16 +82,50 @@ export default function OrganizationPage() {
 
   const budget = campaigns.reduce((sum, item) => sum + Number(item.budget_usdc_micros), 0) / 1_000_000;
 
+  const verifyRotatedKey = useCallback(async (pending: NonNullable<typeof pendingKey>) => {
+    try {
+      const response = await fetch(
+        `/api/app/organizations/${id}/campaigns/${pending.campaignId}/status?transactionHash=${encodeURIComponent(pending.transactionHash)}&expectedKeyHash=${pending.keyHash}`,
+        { cache: "no-store" },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(apiErrorMessage(result, "Unable to verify key rotation"));
+      if (result.status === "finalized") {
+        setPendingKey(null);
+        setRevealedKey(pending.secret);
+        setNotice("The new API key is finalized and active on-chain. Store it now.");
+        await refreshOrganization();
+        return;
+      }
+      if (result.status === "failed") {
+        setPendingKey({ ...pending, status: "failed" });
+        setNotice(result.error?.message ?? "GenLayer rejected the key rotation.");
+        return;
+      }
+      setPendingKey({ ...pending, status: "pending" });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to verify key rotation.");
+    }
+  }, [id, refreshOrganization]);
+  useAutoRefresh(
+    async () => {
+      if (pendingKey?.status === "pending") await verifyRotatedKey(pendingKey);
+    },
+    pendingKey?.status === "pending",
+    15_000,
+  );
+
   async function mutateKey(campaignId: string, mode: "rotate" | "revoke") {
     setBusyCampaign(campaignId);
     setNotice("");
     setRevealedKey("");
     try {
       const secret = mode === "rotate" ? generateCampaignKey() : "";
+      const keyHash = secret ? await hashCampaignKey(secret) : "";
       const payload = {
         campaignId,
         organizationId: id,
-        ...(mode === "rotate" ? { keyHash: await hashCampaignKey(secret) } : {}),
+        ...(mode === "rotate" ? { keyHash } : {}),
       };
       const envelope = await signAction(`campaign.key.${mode}`, payload, nonce);
       const response = await fetch(
@@ -83,12 +140,14 @@ export default function OrganizationPage() {
       if (!response.ok) {
         throw new Error(apiErrorMessage(result, "API key update failed"));
       }
-      if (secret) setRevealedKey(secret);
-      setNotice(
-        mode === "rotate"
-          ? "Key rotation submitted. Store the new key now. Auto-refreshing in 30 seconds."
-          : "Key revocation submitted. Auto-refreshing in 30 seconds.",
-      );
+      if (secret) {
+        const pending = { campaignId, secret, keyHash, transactionHash: result.transactionHash, status: "pending" as const };
+        setPendingKey(pending);
+        setNotice("Key rotation submitted. Waiting for finalized on-chain hash verification.");
+        void verifyRotatedKey(pending);
+      } else {
+        setNotice("Key revocation submitted. The campaign will refresh after GenLayer finalizes it.");
+      }
       window.setTimeout(() => void refreshOrganization(), 30_000);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "API key update failed.");
@@ -108,11 +167,12 @@ export default function OrganizationPage() {
       <div className="section-actions">
         <Link href={`/app/organizations/${id}/campaigns/new`} className="primary-button"><Plus size={16} /> New campaign</Link>
         <Link href={`/app/organizations/${id}/members`} className="secondary-button"><Users size={16} /> Manage members</Link>
+        <button className="secondary-button" disabled={loading} onClick={() => void refreshOrganization()}><RotateCw className={loading ? "spin" : ""} size={15} /> Refresh</button>
       </div>
       <section className="surface-section">
         <div className="section-title-row"><div><span>Campaign registry</span><h2>Campaigns</h2></div><KeyRound size={20} /></div>
         <div className="data-list">
-          {campaigns.length ? campaigns.map((campaign) => (
+          {loading ? <div className="list-empty loading-state"><LoaderCircle className="spin" size={18} /> Reading campaigns from GenLayer</div> : loadError ? <div className="list-empty error-state"><TriangleAlert size={18} /> {loadError}</div> : campaigns.length ? campaigns.map((campaign) => (
             <article key={campaign.id}>
               <div><strong>{campaign.name}</strong><span>{campaign.id} · threshold {campaign.quality_threshold}</span></div>
               <b>
@@ -142,10 +202,18 @@ export default function OrganizationPage() {
                 </button>
               </div>
             </article>
-          )) : <div className="list-empty">Create the first campaign to issue a review API key.</div>}
+          )) : <div className="list-empty empty-action"><span>No campaigns are registered for this organization.</span><Link href={`/app/organizations/${id}/campaigns/new`} className="primary-button"><Plus size={15} /> Create campaign</Link></div>}
         </div>
+        {pendingKey && (
+          <div className={`activation-banner ${pendingKey.status}`}>
+            {pendingKey.status === "failed" ? <TriangleAlert size={16} /> : <LoaderCircle className="spin" size={16} />}
+            <span>{pendingKey.status === "failed" ? "The rotated key is not active." : "Finalizing the rotated key on GenLayer. Keep this page open."}</span>
+            <button className="secondary-button" onClick={() => void verifyRotatedKey(pendingKey)}><RotateCw size={14} /> Check now</button>
+          </div>
+        )}
         {revealedKey && (
           <div className="secret-field">
+            <Check size={16} />
             <code>{revealedKey}</code>
             <button
               className="icon-button"

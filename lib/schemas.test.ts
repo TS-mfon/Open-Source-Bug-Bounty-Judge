@@ -1,10 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  batchReviewSchema,
   campaignDashboardPayloadSchema,
   individualReviewIntentSchema,
 } from "./schemas";
 
 describe("dashboard request schemas", () => {
+  it("accepts a campaign API review without a head SHA", () => {
+    const result = batchReviewSchema.safeParse({
+      candidates: [{
+        pullRequestUrl: "https://github.com/winsznx/routedock/pull/197",
+        issueNumber: 135,
+        contributionType: "code",
+      }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts repository and PR number as the URL alternative", () => {
+    const result = batchReviewSchema.safeParse({
+      candidates: [{
+        repository: "winsznx/routedock",
+        pullRequestNumber: 197,
+        issueNumber: 135,
+        contributionType: "code",
+      }],
+    });
+    expect(result.success).toBe(true);
+  });
   it("accepts the exact normalized campaign payload produced by the UI", () => {
     const result = campaignDashboardPayloadSchema.safeParse({
       id: "stellar-builders-2026",

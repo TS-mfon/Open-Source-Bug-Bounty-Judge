@@ -35,7 +35,8 @@ describe("OpenAPI document", () => {
     expect(document.paths["/reviews/{id}"].get.parameters).toContainEqual(
       expect.objectContaining({ name: "wait" }),
     );
-    expect(document.components.schemas.Contribution.properties.repository.pattern).toBeDefined();
+    expect(document.components.schemas.ReviewCandidateIntent.properties.pullRequestUrl.pattern).toBeDefined();
+    expect(document.components.schemas.ReviewCandidateIntent.required).not.toContain("headSha");
     expect(document.components.schemas.CandidateResult.properties.confidence_bps).toBeDefined();
     expect(document.components.schemas.ErrorResponse).toBeDefined();
   });

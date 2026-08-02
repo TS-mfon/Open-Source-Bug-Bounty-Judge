@@ -79,8 +79,8 @@ Content-Type: application/json`}</pre>
           <p>
             Submits exactly one immutable pull-request revision under the campaign
             budget, threshold, and rubric represented by the bearer key. The API
-            verifies GitHub access and the current head SHA before the platform
-            relayer submits the GenLayer transaction.
+            resolves the repository, PR number, contributor, and current head SHA
+            from GitHub before the platform relayer submits the GenLayer transaction.
           </p>
           <pre className="code-block">{`curl -X POST ${base}/api/v1/reviews \\
   -H "Authorization: Bearer $OSS_JUDGE_KEY" \\
@@ -88,12 +88,8 @@ Content-Type: application/json`}</pre>
   -H "Content-Type: application/json" \\
   -d '{
     "candidates": [{
-      "id": "routedock-pr-197",
-      "repository": "winsznx/routedock",
+      "pullRequestUrl": "https://github.com/winsznx/routedock/pull/197",
       "issueNumber": 135,
-      "pullRequestNumber": 197,
-      "headSha": "46b2ac67e00c7f5fd59d7afdc77d57a52fb324ac",
-      "contributor": "winsznx",
       "contributionType": "code",
       "stellarEvidenceUrls": []
     }],
@@ -102,12 +98,13 @@ Content-Type: application/json`}</pre>
 
           <h3>Candidate fields</h3>
           <div className="field-table">
-            <div><code>id</code><span>Required. Stable 3-96 character integration identifier.</span></div>
-            <div><code>repository</code><span>Required. Public GitHub repository in <code>owner/repository</code> form.</span></div>
+            <div><code>pullRequestUrl</code><span>Recommended. Full public GitHub pull request URL. Use this instead of supplying repository and PR number separately.</span></div>
+            <div><code>id</code><span>Optional. Stable 3-96 character integration identifier. Generated from the repository and PR when omitted.</span></div>
+            <div><code>repository</code><span>Alternative to <code>pullRequestUrl</code>. Public GitHub repository in <code>owner/repository</code> form.</span></div>
             <div><code>issueNumber</code><span>Required positive integer. Defines the acceptance scope.</span></div>
-            <div><code>pullRequestNumber</code><span>Required positive integer.</span></div>
-            <div><code>headSha</code><span>Required 40-character commit SHA. The API rejects a stale revision.</span></div>
-            <div><code>contributor</code><span>Required GitHub login or contributor identifier.</span></div>
+            <div><code>pullRequestNumber</code><span>Required only when using <code>repository</code> instead of <code>pullRequestUrl</code>.</span></div>
+            <div><code>headSha</code><span>Optional stale-revision guard. The API resolves the current 40-character commit SHA automatically and rejects a supplied stale value.</span></div>
+            <div><code>contributor</code><span>Optional. Resolved from the pull request author when omitted.</span></div>
             <div><code>contributionType</code><span><code>code</code>, <code>documentation</code>, <code>design</code>, <code>infrastructure</code>, <code>security</code>, or <code>mixed</code>.</span></div>
             <div><code>stellarEvidenceUrls</code><span>Optional. Up to six HTTPS supplementary evidence URLs. Repository evidence is still fetched independently.</span></div>
           </div>

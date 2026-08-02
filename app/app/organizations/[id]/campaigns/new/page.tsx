@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, Clipboard, KeyRound, LoaderCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Clipboard, KeyRound, LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useState } from "react";
@@ -31,6 +31,9 @@ export default function NewCampaignPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [keyHash, setKeyHash] = useState("");
+  const [transactionHash, setTransactionHash] = useState("");
+  const [activationStatus, setActivationStatus] = useState<"idle" | "pending" | "finalized" | "failed">("idle");
   const [details, setDetails] = useState({
     id: "",
     name: "",
@@ -50,6 +53,32 @@ export default function NewCampaignPage() {
   }, [wallet, id]);
   useAutoRefresh(loadNonce, Boolean(wallet && id));
 
+  const verifyCampaign = useCallback(async (hash = transactionHash, expectedHash = keyHash) => {
+    if (!hash || !expectedHash) return;
+    setActivationStatus("pending");
+    setNotice("");
+    try {
+      const response = await fetch(
+        `/api/app/organizations/${id}/campaigns/${details.id}/status?transactionHash=${encodeURIComponent(hash)}&expectedKeyHash=${expectedHash}`,
+        { cache: "no-store" },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(apiErrorMessage(result, "Unable to verify campaign"));
+      if (result.status === "finalized") {
+        setActivationStatus("finalized");
+        return;
+      }
+      if (result.status === "failed") {
+        setActivationStatus("failed");
+        setNotice(result.error?.message ?? "GenLayer rejected the campaign transaction.");
+        return;
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to verify campaign.");
+    }
+  }, [details.id, id, keyHash, transactionHash]);
+  useAutoRefresh(verifyCampaign, activationStatus === "pending", 15_000);
+
   function saveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -67,6 +96,7 @@ export default function NewCampaignPage() {
     setNotice("");
     try {
       const secret = generateCampaignKey();
+      const generatedHash = await hashCampaignKey(secret);
       const candidatePayload = {
         id: details.id,
         organizationId: id,
@@ -75,7 +105,7 @@ export default function NewCampaignPage() {
         qualityThreshold: Number(details.threshold),
         rubricVersion: "code-v1",
         rubric: defaultRubric,
-        keyHash: await hashCampaignKey(secret),
+        keyHash: generatedHash,
       };
       const parsed = campaignDashboardPayloadSchema.safeParse(candidatePayload);
       if (!parsed.success) {
@@ -95,7 +125,11 @@ export default function NewCampaignPage() {
         throw new Error(apiErrorMessage(result, "Campaign creation failed"));
       }
       setApiKey(secret);
+      setKeyHash(generatedHash);
+      setTransactionHash(result.transactionHash);
+      setActivationStatus("pending");
       setStep(4);
+      void verifyCampaign(result.transactionHash, generatedHash);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Campaign creation failed.");
     } finally {
@@ -154,15 +188,24 @@ export default function NewCampaignPage() {
 
       {step === 4 && (
         <section className="wizard-panel key-reveal">
-          <div className="key-icon"><KeyRound size={24} /></div>
-          <div className="section-heading"><span>Campaign submitted</span><h2>Store this API key now</h2><p>Only its SHA-256 hash is stored on-chain. The plaintext cannot be recovered. The organization view refreshes every 30 seconds.</p></div>
+          <div className="key-icon">{activationStatus === "pending" ? <LoaderCircle className="spin" size={24} /> : activationStatus === "failed" ? <TriangleAlert size={24} /> : <KeyRound size={24} />}</div>
+          <div className="section-heading">
+            <span>{activationStatus === "finalized" ? "Campaign finalized" : activationStatus === "failed" ? "Campaign failed" : "Finalizing on GenLayer"}</span>
+            <h2>{activationStatus === "finalized" ? "Your API key is active" : "Keep this page open"}</h2>
+            <p>{activationStatus === "finalized" ? "The campaign and matching SHA-256 key hash are confirmed on-chain. The plaintext cannot be recovered." : "The plaintext key is shown while consensus completes. Do not use it until this page confirms that its hash is active on-chain."}</p>
+          </div>
           <div className="secret-field"><code>{apiKey}</code><button className="icon-button" onClick={() => void navigator.clipboard.writeText(apiKey)} aria-label="Copy API key"><Clipboard size={17} /></button></div>
+          <div className={`activation-banner ${activationStatus}`}>
+            {activationStatus === "finalized" ? <Check size={16} /> : activationStatus === "failed" ? <TriangleAlert size={16} /> : <LoaderCircle className="spin" size={16} />}
+            <span>{activationStatus === "finalized" ? "Active and ready for API requests" : activationStatus === "failed" ? "Not active. Review the error before retrying." : "Waiting for transaction finalization and campaign indexing"}</span>
+            {activationStatus !== "finalized" && <button className="secondary-button" onClick={() => void verifyCampaign()}><RefreshCw size={14} /> Check now</button>}
+          </div>
           <pre className="code-block">{`curl -X POST https://open-source-bug-bounty-judge.vercel.app/api/v1/reviews \\
   -H "Authorization: Bearer ${apiKey}" \\
   -H "Idempotency-Key: review-batch-001" \\
   -H "Content-Type: application/json" \\
-  -d '{"candidates":[...]}'`}</pre>
-          <Link className="primary-button" href={`/app/organizations/${id}`}>Open organization <ArrowRight size={16} /></Link>
+  -d '{"candidates":[{"pullRequestUrl":"https://github.com/owner/repo/pull/123","issueNumber":100,"contributionType":"code"}]}'`}</pre>
+          {activationStatus === "finalized" && <Link className="primary-button" href={`/app/organizations/${id}`}>Open organization <ArrowRight size={16} /></Link>}
         </section>
       )}
       {notice && <div className="toast-notice">{notice}</div>}

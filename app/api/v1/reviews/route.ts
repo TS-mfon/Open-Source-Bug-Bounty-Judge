@@ -13,7 +13,7 @@ import {
   readReviewByKey,
   submitBatchReview,
 } from "@/lib/genlayer";
-import { preflightContribution } from "@/lib/github";
+import { preflightContribution, resolveReviewCandidate } from "@/lib/github";
 import { campaignReviewKey } from "@/lib/hash";
 import { batchReviewSchema } from "@/lib/schemas";
 import {
@@ -30,10 +30,18 @@ export async function POST(request: Request) {
   try {
     const key = await requireApiKey(request, "reviews:create");
     const idempotencyKey = requireIdempotencyKey(request);
-    const input = batchReviewSchema.parse(await parseJson(request));
+    const intent = batchReviewSchema.parse(await parseJson(request));
+    const input = {
+      ...intent,
+      candidates: await Promise.all(intent.candidates.map(resolveReviewCandidate)),
+    };
     const campaign = await readCampaign(key.campaign_id);
     if (!campaign) throw new ApiError("CAMPAIGN_NOT_FOUND", "Campaign not found.", 404);
-    await Promise.all(input.candidates.map(preflightContribution));
+    await Promise.all(
+      input.candidates.map((candidate) =>
+        preflightContribution(candidate, { skipPullRequest: true }),
+      ),
+    );
     const deterministicKey = campaignReviewKey(
       key.organization_id,
       key.campaign_id,
@@ -72,6 +80,7 @@ export async function POST(request: Request) {
         status: settled.review.status,
         transactionHash,
         statusUrl,
+        candidates: input.candidates,
         review: settled.review,
       });
     }
@@ -83,6 +92,7 @@ export async function POST(request: Request) {
           status: "failed",
           transactionHash,
           statusUrl,
+          candidates: input.candidates,
           transaction: settled.transaction,
         },
         { status: 502 },
@@ -95,6 +105,7 @@ export async function POST(request: Request) {
         status: "submitted",
         transactionHash,
         statusUrl,
+        candidates: input.candidates,
       },
       {
         status: 202,

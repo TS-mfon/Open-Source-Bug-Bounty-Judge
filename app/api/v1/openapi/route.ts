@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Open Source Bug Bounty Judge API",
-      version: "1.1.0",
+      version: "1.2.0",
       description:
         "Campaign-scoped API for submitting immutable pull-request review batches to GenLayer, polling consensus, reading evidence-backed results, appealing finalized reviews, and configuring result webhooks. Campaign creation and key management remain wallet-authenticated dashboard operations.",
     },
@@ -345,20 +345,25 @@ export async function GET(request: Request) {
           maxLength: 96,
           pattern: "^[a-zA-Z0-9:_-]+$",
         },
-        Contribution: {
+        ReviewCandidateIntent: {
           type: "object",
           additionalProperties: false,
           required: [
-            "id",
-            "repository",
             "issueNumber",
-            "pullRequestNumber",
-            "headSha",
-            "contributor",
             "contributionType",
+          ],
+          anyOf: [
+            { required: ["pullRequestUrl"] },
+            { required: ["repository", "pullRequestNumber"] },
           ],
           properties: {
             id: { $ref: "#/components/schemas/Identifier" },
+            pullRequestUrl: {
+              type: "string",
+              format: "uri",
+              pattern: "^https://github\\.com/[^/]+/[^/]+/pull/[0-9]+",
+              examples: ["https://github.com/winsznx/routedock/pull/197"],
+            },
             repository: {
               type: "string",
               pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
@@ -366,8 +371,12 @@ export async function GET(request: Request) {
             },
             issueNumber: { type: "integer", minimum: 1 },
             pullRequestNumber: { type: "integer", minimum: 1 },
-            headSha: { type: "string", pattern: "^[0-9a-fA-F]{40}$" },
-            contributor: { type: "string", minLength: 1, maxLength: 80 },
+            headSha: {
+              type: "string",
+              pattern: "^[0-9a-fA-F]{40}$",
+              description: "Optional stale-revision guard. The API always resolves the current SHA.",
+            },
+            contributor: { type: "string", maxLength: 80, default: "" },
             contributionType: {
               type: "string",
               enum: ["code", "documentation", "design", "infrastructure", "security", "mixed"],
@@ -390,7 +399,7 @@ export async function GET(request: Request) {
               minItems: 1,
               maxItems: 1,
               description: "Exactly one pull request per review request.",
-              items: { $ref: "#/components/schemas/Contribution" },
+              items: { $ref: "#/components/schemas/ReviewCandidateIntent" },
             },
             appealContext: { type: "string", maxLength: 4000, default: "" },
           },

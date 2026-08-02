@@ -189,6 +189,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .secret-field { margin: 20px 0; padding: 12px 12px 12px 16px; display: flex; align-items: center; gap: 12px; border: 1px solid rgba(0,229,255,.35); background: #0d1115; border-radius: 6px; text-align: left; }
 .secret-field code { min-width: 0; margin-right: auto; overflow-wrap: anywhere; color: var(--cyan); font-size: 12px; }
 .key-reveal .code-block { margin: 20px 0; text-align: left; border: 1px solid var(--border); }
+.activation-banner { margin: 16px 0; padding: 12px 14px; display: flex; align-items: center; gap: 10px; border: 1px solid rgba(0,229,255,.28); background: rgba(0,112,243,.08); color: #cbd7e4; border-radius: 6px; font-size: 12px; text-align: left; }
+.activation-banner span { margin-right: auto; }
+.activation-banner.finalized { border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.08); color: #8ce5c1; }
+.activation-banner.failed { border-color: rgba(239,68,68,.42); background: rgba(239,68,68,.08); color: #f6a6a6; }
+.activation-banner .secondary-button { min-height: 34px; padding: 0 11px; flex: 0 0 auto; }
+.loading-state, .error-state, .empty-action { display: flex; align-items: center; gap: 10px; }
+.error-state { color: #f6a6a6; }
+.empty-action { justify-content: space-between; }
+.empty-action .primary-button { min-height: 36px; }
 
 .member-table { display: grid; }
 .member-table > div { min-height: 56px; padding: 8px 4px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); }

@@ -120,9 +120,43 @@ export const contributionSchema = z.object({
   stellarEvidenceUrls: evidenceUrls,
 });
 
+const pullRequestUrlSchema = httpsUrl.refine(
+  (value) => /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+(?:[/?#].*)?$/i.test(value),
+  "Must be a GitHub pull request URL.",
+);
+
+export const reviewCandidateIntentSchema = z
+  .object({
+    id: identifier.optional(),
+    pullRequestUrl: pullRequestUrlSchema.optional(),
+    repository: repositorySchema.optional(),
+    issueNumber: z.number().int().positive(),
+    pullRequestNumber: z.number().int().positive().optional(),
+    headSha: z.string().regex(/^[0-9a-fA-F]{40}$/).optional(),
+    contributor: trimmedString.max(80).default(""),
+    contributionType: contributionSchema.shape.contributionType,
+    stellarEvidenceUrls: evidenceUrls,
+  })
+  .superRefine((value, context) => {
+    if (!value.pullRequestUrl && (!value.repository || !value.pullRequestNumber)) {
+      context.addIssue({
+        code: "custom",
+        path: ["pullRequestUrl"],
+        message: "Provide pullRequestUrl or repository and pullRequestNumber.",
+      });
+    }
+    if (value.pullRequestUrl && (value.repository || value.pullRequestNumber)) {
+      context.addIssue({
+        code: "custom",
+        path: ["pullRequestUrl"],
+        message: "Use pullRequestUrl by itself, or repository with pullRequestNumber.",
+      });
+    }
+  });
+
 export const batchReviewSchema = z.object({
   candidates: z
-    .array(contributionSchema)
+    .array(reviewCandidateIntentSchema)
     .length(1, "Submit exactly one pull request per review request."),
   appealContext: z.string().max(4000).default(""),
 });
