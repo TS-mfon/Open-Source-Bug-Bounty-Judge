@@ -151,27 +151,47 @@ def mock_github(
     )
 
 
-def test_review_rejects_submitted_sha_that_differs_from_patch_head(
+def test_review_uses_resolved_sha_without_inferring_head_from_patch_headers(
     direct_vm, direct_deploy, direct_alice
 ):
     contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
     register_org(contract)
     create_campaign(contract)
-    stale = candidate(head_sha="b" * 40)
+    resolved = candidate(head_sha="b" * 40)
     contract.add_contributions(
-        "campaign-04", "grantfox", json.dumps([stale]), "a" * 64, "add-sha-mismatch"
+        "campaign-04", "grantfox", json.dumps([resolved]), "a" * 64, "add-resolved-sha"
     )
-    mock_github(direct_vm, 123, 101, HEAD_SHA)
-    with direct_vm.expect_revert("Submitted head SHA does not match PR patch head"):
-        contract.request_campaign_review(
-            "review-sha-mismatch",
-            campaign_review_key([stale]),
-            "campaign-04",
-            "grantfox",
-            "a" * 64,
-            "review-sha-mismatch-key",
-            "",
-        )
+    mock_github(
+        direct_vm,
+        123,
+        101,
+        HEAD_SHA,
+        patch_body=(
+            f"From {HEAD_SHA} Mon Sep 17 00:00:00 2001\n"
+            "Subject: [PATCH] Implement review API\n\n"
+            "diff --git a/src/review.ts b/src/review.ts\n"
+            "--- a/src/review.ts\n"
+            "+++ b/src/review.ts\n"
+            "@@ -1 +1 @@\n"
+            "-export const review = false;\n"
+            "+export function review() { return true; }\n"
+        ),
+    )
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(score=90, head_sha="b" * 40),
+    )
+    contract.request_campaign_review(
+        "review-resolved-sha",
+        campaign_review_key([resolved]),
+        "campaign-04",
+        "grantfox",
+        "a" * 64,
+        "review-resolved-sha-key",
+        "",
+    )
+    review = json.loads(contract.get_review("review-resolved-sha"))
+    assert review["result"]["candidates"][0]["score"] == 90
 
 
 def test_review_rejects_truncated_pull_request_patch(
@@ -230,6 +250,32 @@ def test_review_uses_pr_patch_and_links_without_github_json_api(
     stored = json.loads(contract.get_review("review-resolved-head"))
     assert stored["status"] == "finalized"
     assert stored["result"]["candidates"][0]["recommended_usdc_micros"] == "40000000"
+
+
+def test_review_accepts_model_variance_within_the_same_reward_tier(
+    direct_vm, direct_deploy, direct_alice
+):
+    contract = deploy_protocol(direct_vm, direct_deploy, direct_alice)
+    register_org(contract)
+    create_campaign(contract)
+    contract.add_contributions(
+        "campaign-04", "grantfox", json.dumps([candidate()]), "a" * 64, "add-score-variance"
+    )
+    mock_github(direct_vm)
+    direct_vm.mock_llm(
+        r".*independent open-source contribution reward judge.*",
+        campaign_result(score=82, flags=["minor_test_gap"]),
+    )
+    contract.request_campaign_review(
+        "review-score-variance",
+        campaign_review_key([candidate()]),
+        "campaign-04",
+        "grantfox",
+        "a" * 64,
+        "review-score-variance-key",
+        "",
+    )
+    assert json.loads(contract.get_review("review-score-variance"))["status"] == "finalized"
 
 
 def test_campaign_review_rejects_more_than_one_pull_request(

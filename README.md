@@ -20,7 +20,7 @@ operators keep final payout authority.
 | Contract | Address | Deployment transaction |
 |---|---|---|
 | Organization Registry | `0xb41b8a86257885A47a46428FD35886fD7E1B6f5c` | `0xe360b7b6ecac179452616bf83c2dfc86fca0f318db0e789038b165c7624d7475` |
-| Contribution Review Protocol | `0x060CfA6EfE717b176F6F24B70E0bB455d9B8c7f5` | `0x82d91da37f274751c28788f230d6d16083f8b028446dd7c75d69b479eb65259c` |
+| Contribution Review Protocol | `0x50f2322A6572010804Bf46Ca790FE7C94A20C980` | `0x488b0f62531b5ba8f64713f37ff01908714369ce1f209f7f71fe15b77fac718d` |
 
 Both deployments finalized and were verified by reading their deployed code and
 contract schemas on August 2, 2026. The exact deployment record is stored in
@@ -557,7 +557,7 @@ npm install
 Create `.env.local`:
 
 ```bash
-NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x060CfA6EfE717b176F6F24B70E0bB455d9B8c7f5
+NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS=0x50f2322A6572010804Bf46Ca790FE7C94A20C980
 NEXT_PUBLIC_GENLAYER_REGISTRY_ADDRESS=0xb41b8a86257885A47a46428FD35886fD7E1B6f5c
 NEXT_PUBLIC_GENLAYER_NETWORK=studionet
 GENLAYER_PLATFORM_PRIVATE_KEY=0x...

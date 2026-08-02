@@ -13,13 +13,23 @@
   },
   "reviewProtocol": {
     "contractName": "ContributionReviewProtocol",
-    "contractAddress": "0xa65cDB62A2eA1F058991e0A15040916b8BdEb2B7",
-    "deploymentTransactionHash": "0xfd7fc035699950e932fa628383d9504bd707243df452e858bea1fd34387d185d",
+    "contractAddress": "0x50f2322A6572010804Bf46Ca790FE7C94A20C980",
+    "deploymentTransactionHash": "0x488b0f62531b5ba8f64713f37ff01908714369ce1f209f7f71fe15b77fac718d",
     "registryAddress": "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c",
     "status": "FINALIZED",
     "verification": "CODE_AND_SCHEMA_READABLE"
   },
   "supersededDeployments": [
+    {
+      "reviewProtocolAddress": "0x9A2C48d42BED8B915cf69c50a8B01dAb88Ddb897",
+      "deploymentTransactionHash": "0x8199c7a8fcd9c2809853bb96bce12e5dfc1d13d4032c5133e5ba83e4dd2b5cc3",
+      "note": "Superseded after consensus comparison was tightened beyond normal independent model variance."
+    },
+    {
+      "reviewProtocolAddress": "0xa65cDB62A2eA1F058991e0A15040916b8BdEb2B7",
+      "deploymentTransactionHash": "0xfd7fc035699950e932fa628383d9504bd707243df452e858bea1fd34387d185d",
+      "note": "Superseded because GitHub patch commit headers were incorrectly treated as the pull request head identity."
+    },
     {
       "reviewProtocolAddress": "0xE4f356EE578796f55C60e09660a0413709Fd73d4",
       "deploymentTransactionHash": "0xcba166b3ef36f656d127489934eac2b6464db2ca85d1f9c321b0af4904919298",
@@ -57,11 +67,11 @@
     }
   ],
   "migration": {
-    "targetContractAddress": "0xa65cDB62A2eA1F058991e0A15040916b8BdEb2B7",
-    "campaignId": "test-test",
-    "organizationId": "dave-01",
-    "transactionHash": "0x590e06aed4216aa3e34ac74e5a7c660c1fb774b7dec934b6102e5ed8a34f6b2c",
-    "status": "SUBMITTED_RPC_RATE_LIMITED_BEFORE_FINAL_RECEIPT"
+    "targetContractAddress": "0x50f2322A6572010804Bf46Ca790FE7C94A20C980",
+    "campaignId": "zero-001",
+    "organizationId": "laltina",
+    "transactionHash": "0x127ab7b339893449aaa49990895f8aed4dd5e18caa2adcbe946c564fad6bb04d",
+    "status": "FINALIZED"
   },
   "vercel": {
     "project": "gen-daves-projects/open-source-bug-bounty-judge",

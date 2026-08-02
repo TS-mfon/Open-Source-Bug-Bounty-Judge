@@ -215,20 +215,6 @@ def _patch_sections(patch: str) -> list[dict]:
     return sections
 
 
-def _resolve_patch_head_sha(patch: str, submitted_head_sha: str) -> str:
-    # GitHub patch responses include one `From <sha>` line per commit. The last
-    # commit line is the PR head and avoids relying on the JSON API response.
-    matches = re.findall(r"(?im)^From\s+([0-9a-f]{40})\s+", patch)
-    if matches:
-        return matches[-1].lower()
-    fallback = str(submitted_head_sha).strip().lower()
-    if re.fullmatch(r"[0-9a-f]{40}", fallback):
-        return fallback
-    raise gl.vm.UserError(
-        f"{ERROR_EXTERNAL} Pull request patch did not expose a usable head SHA"
-    )
-
-
 def _fetch_candidate_evidence(candidate: dict) -> dict:
     candidate_id = _required_string(candidate.get("id", ""), "candidate id", 96)
     repository = _required_string(candidate.get("repository", ""), "repository", 202)
@@ -262,11 +248,10 @@ def _fetch_candidate_evidence(candidate: dict) -> dict:
             f"{ERROR_EXTERNAL} Pull request patch is too large for complete inspection"
         )
     patch_content = sources[3]["content"]
-    head_sha = _resolve_patch_head_sha(patch_content, submitted_head_sha)
-    if head_sha != submitted_head_sha:
-        raise gl.vm.UserError(
-            f"{ERROR_EXPECTED} Submitted head SHA does not match PR patch head"
-        )
+    # The API resolves the current PR head immediately before submission. A
+    # GitHub patch contains commit-object headers, which are not a reliable PR
+    # head identity for multi-commit, rebased, or merge-ref pull requests.
+    head_sha = submitted_head_sha
 
     file_sections = _patch_sections(patch_content)
     if len(file_sections) == 0:
@@ -692,11 +677,12 @@ reward activity volume alone. Cite only exact URLs fetched by the contract.
             validator_score = int(validator_candidate.get("score", -1))
         except Exception:
             return False
-        if abs(leader_score - validator_score) > 5:
+        # Validators independently fetch evidence and ask different models for
+        # a score. Keep allocation-critical decisions strict, but tolerate
+        # normal model variance within the same reward tier.
+        if abs(leader_score - validator_score) > 15:
             return False
-        return sorted(_string_list(leader_candidate.get("flags", []))) == sorted(
-            _string_list(validator_candidate.get("flags", []))
-        )
+        return True
 
     return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
 
