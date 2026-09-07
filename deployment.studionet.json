@@ -19,6 +19,25 @@
     "status": "FINALIZED",
     "verification": "CODE_AND_SCHEMA_READABLE"
   },
+  "protocolDirectory": {
+    "contractName": "ProtocolDirectory",
+    "contractAddress": "0x9989964E527e99075a8DF0984A208368CB66Ae47",
+    "deploymentTransactionHash": "0x74e97e5ddf3a8d37f98fa9811b72436b20060f6b3ca596aa15520183d3e771e8",
+    "status": "FINALIZED",
+    "activeProductionComponent": "review_protocol",
+    "activeProductionVersion": "v1",
+    "version": "1.0.0",
+    "activationTransactionHash": "0xe5bd2e1ea76c36aebdf9c6ed42aed9d7199e753b3ddd93892c736356082a6a06",
+    "activeReviewProtocol": "0x50f2322A6572010804Bf46Ca790FE7C94A20C980"
+  },
+  "reviewProtocolV2": {
+    "contractName": "ContributionReviewProtocol",
+    "contractAddress": "0x14b3B137920024c1FcE711148c1fD4134e04cD14",
+    "deploymentTransactionHash": "0xf96841a1da8d65812f7194d1f2d2b1ca69dc82a747684572db1f13e3885d43d7",
+    "status": "FINALIZED",
+    "version": "2.0.0",
+    "active": false
+  },
   "supersededDeployments": [
     {
       "reviewProtocolAddress": "0x9A2C48d42BED8B915cf69c50a8B01dAb88Ddb897",
@@ -80,5 +99,6 @@
     "deploymentId": "dpl_5725T33Du4oNvsYBZZ6EWGmMDEFs",
     "region": "iad1",
     "status": "ready"
-  }
+  },
+  "updatedAt": "2026-09-07T04:29:01.254Z"
 }

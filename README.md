@@ -26,6 +26,12 @@ Both deployments finalized and were verified by reading their deployed code and
 contract schemas on August 2, 2026. The exact deployment record is stored in
 [`deployment.studionet.json`](deployment.studionet.json).
 
+The V1 contracts remain the active application deployment while the versioned
+V2 protocol and directory are qualified. This preserves existing organizations,
+campaigns, API-key hashes, and review history during migration. New traffic must
+not be pointed at a fresh V2 protocol until the on-chain migration checklist is
+complete.
+
 The platform relayer wallet is:
 
 ```text
@@ -701,6 +707,9 @@ deployment.studionet.json
   Soroban proof adapter.
 - StudioNet source and transaction rate limits can delay reviews.
 - The platform wallet is a single relayer key.
+- The V2 review-job and signer-control primitives are deployed separately while
+  V1 remains active; durable asynchronous execution is enabled only after the
+  V2 migration and executor release.
 - Contract writes currently authenticate through the platform relayer plus
   on-chain actor-wallet/nonce checks; GenLayer does not yet provide a supported
   secp256k1 recovery primitive in this deployment, so the platform relayer

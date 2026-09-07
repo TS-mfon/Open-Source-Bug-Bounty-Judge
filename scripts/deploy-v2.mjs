@@ -1,0 +1,33 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { createAccount, createClient } from "genlayer-js";
+import { studionet } from "genlayer-js/chains";
+import { TransactionStatus } from "genlayer-js/types";
+
+const key = process.env.GENLAYER_OPERATOR_PRIVATE_KEY ?? "";
+if (!/^0x[0-9a-fA-F]{64}$/.test(key)) throw new Error("GENLAYER_OPERATOR_PRIVATE_KEY is invalid");
+const expected = "0x50BC1d91FfBB110E53ffD31Ad426d559f630b26E".toLowerCase();
+const account = createAccount(key);
+if (account.address.toLowerCase() !== expected) throw new Error(`Signer mismatch: ${account.address}`);
+const client = createClient({ chain: studionet, account });
+const registry = "0xb41b8a86257885A47a46428FD35886fD7E1B6f5c";
+const deploy = async (relative, args) => {
+  const code = await readFile(relative, "utf8");
+  const hash = await client.deployContract({ code, args });
+  console.log(JSON.stringify({ submitted: relative, hash }, null, 2));
+  const receipt = await client.waitForTransactionReceipt({ hash, status: TransactionStatus.FINALIZED, interval: 5000, retries: 180 });
+  const raw = receipt;
+  const execution = String(raw.txExecutionResultName ?? raw.execution_result ?? "");
+  const consensus = String(raw.resultName ?? raw.result_name ?? "");
+  const address = raw.data?.contract_address ?? raw.data?.contractAddress ?? raw.txDataDecoded?.contract_address ?? raw.txDataDecoded?.contractAddress;
+  if (execution.includes("ERROR") || consensus.includes("DISAGREE") || !address) throw new Error(`${relative} deployment failed: ${JSON.stringify({ status: raw.statusName ?? raw.status_name, consensus, execution, address })}`);
+  return { address, hash, status: raw.statusName ?? raw.status_name ?? "FINALIZED" };
+};
+const reviewProtocol = await deploy("contracts/contribution_review_protocol.py", [account.address, registry]);
+const directory = await deploy("contracts/protocol_directory.py", [registry]);
+const manifestPath = "deployment.studionet.json";
+const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+manifest.protocolDirectory = { ...manifest.protocolDirectory, contractAddress: directory.address, deploymentTransactionHash: directory.hash, status: directory.status, version: "1.0.0", activeProductionComponent: "review_protocol", activeProductionVersion: "v1" };
+manifest.reviewProtocolV2 = { ...manifest.reviewProtocolV2, contractAddress: reviewProtocol.address, deploymentTransactionHash: reviewProtocol.hash, status: reviewProtocol.status, version: "2.0.0", active: false };
+manifest.updatedAt = new Date().toISOString();
+await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+console.log(JSON.stringify({ signer: account.address, reviewProtocolV2: reviewProtocol, protocolDirectory: directory }, null, 2));

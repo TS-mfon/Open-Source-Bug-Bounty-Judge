@@ -8,6 +8,9 @@ export const publicConfig = {
     (process.env.NEXT_PUBLIC_GENLAYER_REGISTRY_ADDRESS as `0x${string}` | undefined) ??
     ZERO_ADDRESS,
   network: process.env.NEXT_PUBLIC_GENLAYER_NETWORK ?? "studionet",
+  directoryAddress:
+    (process.env.NEXT_PUBLIC_GENLAYER_DIRECTORY_ADDRESS as `0x${string}` | undefined) ??
+    ZERO_ADDRESS,
 };
 
 export function getServerConfig() {
@@ -21,3 +24,4 @@ export function getServerConfig() {
 
 export const isContractConfigured = publicConfig.contractAddress !== ZERO_ADDRESS;
 export const isRegistryConfigured = publicConfig.registryAddress !== ZERO_ADDRESS;
+export const isDirectoryConfigured = publicConfig.directoryAddress !== ZERO_ADDRESS;

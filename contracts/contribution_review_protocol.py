@@ -27,6 +27,17 @@ ALLOWED_SCOPES = (
     "appeals:create",
     "webhooks:manage",
 )
+PROTOCOL_VERSION = "2.0.0"
+VALID_JOB_STATES = (
+    "accepted",
+    "evidence_pending",
+    "evaluating",
+    "retry_wait",
+    "finalized",
+    "needs_manual_review",
+    "failed",
+    "cancelled",
+)
 
 
 def _required_string(value, label: str, maximum: int = 256) -> str:
@@ -714,6 +725,13 @@ class ContributionReviewProtocol(gl.Contract):
     campaign_review_ids: TreeMap[str, str]
     campaign_review_counts: TreeMap[str, u256]
     wallet_review_ids: TreeMap[str, str]
+    protocol_version: str
+    paused: bool
+    pending_platform_wallet: str
+    signer_epoch: u256
+    review_jobs: TreeMap[str, str]
+    review_job_ids: DynArray[str]
+    review_job_count: u256
 
     def __init__(self, platform_wallet: str, registry_contract: str):
         self.owner = str(gl.message.sender_address).lower()
@@ -721,10 +739,23 @@ class ContributionReviewProtocol(gl.Contract):
         self.registry_contract = str(registry_contract).lower()
         self.campaign_count = u256(0)
         self.review_count = u256(0)
+        self.protocol_version = PROTOCOL_VERSION
+        self.paused = False
+        self.pending_platform_wallet = ""
+        self.signer_epoch = u256(0)
+        self.review_job_count = u256(0)
 
     def _only_platform(self) -> None:
         if str(gl.message.sender_address).lower() != self.platform_wallet:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Only platform wallet")
+
+    def _ensure_writable(self) -> None:
+        if self.paused:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Protocol is paused")
+
+    def _only_owner(self) -> None:
+        if str(gl.message.sender_address).lower() != self.owner:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Only owner")
 
     def _consume_wallet_nonce(self, wallet: str, nonce: int) -> None:
         wallet = wallet.lower()
@@ -815,6 +846,7 @@ class ContributionReviewProtocol(gl.Contract):
         scopes_json: str,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         organization_id = _required_string(organization_id, "organization id", 96)
         key_hash = _required_string(key_hash, "API key hash", 64)
         if self.organizations.get(organization_id, "") != "":
@@ -854,6 +886,7 @@ class ContributionReviewProtocol(gl.Contract):
     @gl.public.write
     def revoke_api_key(self, key_hash: str) -> None:
         self._only_platform()
+        self._ensure_writable()
         record = self.api_keys.get(key_hash, "")
         if record == "":
             raise gl.vm.UserError(f"{ERROR_EXPECTED} API key not found")
@@ -876,6 +909,7 @@ class ContributionReviewProtocol(gl.Contract):
         action_nonce: int,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         campaign_id = _required_string(campaign_id, "campaign id", 96)
         organization_id = _required_string(organization_id, "organization id", 96)
         actor_wallet = _required_string(actor_wallet, "actor wallet", 42).lower()
@@ -952,6 +986,7 @@ class ContributionReviewProtocol(gl.Contract):
         action_nonce: int,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         campaign_raw = self.campaigns.get(campaign_id, "")
         if campaign_raw == "":
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign not found")
@@ -999,6 +1034,7 @@ class ContributionReviewProtocol(gl.Contract):
         action_nonce: int,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         campaign_raw = self.campaigns.get(campaign_id, "")
         if campaign_raw == "":
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Campaign not found")
@@ -1028,6 +1064,7 @@ class ContributionReviewProtocol(gl.Contract):
         appeal_context: str,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         review_id = _required_string(review_id, "review id", 128)
         review_key = _required_string(review_key, "review key", 64)
         key_hash = _required_string(key_hash, "API key hash", 64)
@@ -1240,6 +1277,7 @@ class ContributionReviewProtocol(gl.Contract):
         appeal_context: str,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         review_id = _required_string(review_id, "review id", 128)
         review_key = _required_string(review_key, "review key", 64)
         if self.reviews.get(review_id, "") != "":
@@ -1308,6 +1346,7 @@ class ContributionReviewProtocol(gl.Contract):
         contribution_json: str,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         review_id = _required_string(review_id, "review id", 128)
         review_key = _required_string(review_key, "review key", 64)
         if self.reviews.get(review_id, "") != "":
@@ -1382,6 +1421,7 @@ class ContributionReviewProtocol(gl.Contract):
         appeal_context: str,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         review_id = _required_string(review_id, "review id", 128)
         review_key = _required_string(review_key, "review key", 64)
         original_raw = self.reviews.get(original_review_id, "")
@@ -1469,6 +1509,7 @@ class ContributionReviewProtocol(gl.Contract):
         key_hash: str,
     ) -> None:
         self._only_platform()
+        self._ensure_writable()
         self._consume_api_key(key_hash, organization_id, "webhooks:manage")
         if not endpoint_url.startswith("https://"):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Webhook endpoint must use HTTPS")
@@ -1477,15 +1518,118 @@ class ContributionReviewProtocol(gl.Contract):
     @gl.public.write
     def mark_webhook_delivered(self, delivery_key: str) -> None:
         self._only_platform()
+        self._ensure_writable()
         self.webhook_delivery_marks[
             _required_string(delivery_key, "delivery key", 160)
         ] = True
 
     @gl.public.write
     def set_platform_wallet(self, platform_wallet: str) -> None:
-        if str(gl.message.sender_address).lower() != self.owner:
-            raise gl.vm.UserError(f"{ERROR_EXPECTED} Only owner")
-        self.platform_wallet = str(platform_wallet).lower()
+        self._only_owner()
+        self._set_platform_wallet(platform_wallet)
+
+    def _set_platform_wallet(self, platform_wallet: str) -> None:
+        normalized = _required_string(platform_wallet, "platform wallet", 42).lower()
+        if not normalized.startswith("0x") or len(normalized) != 42:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid platform wallet")
+        self.platform_wallet = normalized
+        self.pending_platform_wallet = ""
+        self.signer_epoch = self.signer_epoch + u256(1)
+
+    @gl.public.write
+    def request_platform_wallet_rotation(self, platform_wallet: str) -> None:
+        self._only_owner()
+        normalized = _required_string(platform_wallet, "platform wallet", 42).lower()
+        if not normalized.startswith("0x") or len(normalized) != 42:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid platform wallet")
+        if normalized == self.platform_wallet:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Platform wallet is unchanged")
+        self.pending_platform_wallet = normalized
+
+    @gl.public.write
+    def activate_platform_wallet_rotation(self) -> None:
+        sender = str(gl.message.sender_address).lower()
+        if sender != self.owner and sender != self.pending_platform_wallet:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Rotation authorization required")
+        if self.pending_platform_wallet == "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} No pending platform wallet")
+        self._set_platform_wallet(self.pending_platform_wallet)
+
+    @gl.public.write
+    def pause_protocol(self) -> None:
+        self._only_owner()
+        self.paused = True
+
+    @gl.public.write
+    def unpause_protocol(self) -> None:
+        self._only_owner()
+        self.paused = False
+
+    @gl.public.write
+    def create_review_job(
+        self,
+        job_id: str,
+        review_key: str,
+        organization_id: str,
+        campaign_id: str,
+        requester_wallet: str,
+        max_attempts: int,
+    ) -> None:
+        self._only_platform()
+        self._ensure_writable()
+        job_id = _required_string(job_id, "job id", 128)
+        review_key = _required_string(review_key, "review key", 64)
+        if self.review_jobs.get(job_id, "") != "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Review job already exists")
+        if self.review_ids_by_key.get(review_key, "") != "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Review key already finalized")
+        if int(max_attempts) < 1 or int(max_attempts) > 10:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid maximum attempts")
+        record = {
+            "job_id": job_id,
+            "review_key": review_key,
+            "organization_id": _required_string(organization_id, "organization id", 96),
+            "campaign_id": _required_string(campaign_id, "campaign id", 96),
+            "requester_wallet": str(requester_wallet).lower(),
+            "status": "accepted",
+            "attempt": 0,
+            "max_attempts": int(max_attempts),
+            "lease_owner": "",
+            "lease_token": "",
+            "failure_code": "",
+        }
+        self.review_jobs[job_id] = json.dumps(record, sort_keys=True)
+        self.review_job_ids.append(job_id)
+        self.review_job_count += u256(1)
+
+    @gl.public.write
+    def update_review_job(
+        self,
+        job_id: str,
+        status: str,
+        attempt: int,
+        lease_owner: str,
+        lease_token: str,
+        failure_code: str,
+    ) -> None:
+        self._only_platform()
+        self._ensure_writable()
+        raw = self.review_jobs.get(_required_string(job_id, "job id", 128), "")
+        if raw == "":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Review job not found")
+        if status not in VALID_JOB_STATES:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Invalid review job status")
+        record = _parse_json(raw, "Review job")
+        if int(attempt) < int(record.get("attempt", 0)):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Review job attempt regressed")
+        if int(attempt) > int(record.get("max_attempts", 0)):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Review job attempts exceeded")
+        record["status"] = status
+        record["attempt"] = int(attempt)
+        record["lease_owner"] = str(lease_owner).strip()
+        record["lease_token"] = str(lease_token).strip()
+        record["failure_code"] = str(failure_code).strip()
+        self.review_jobs[job_id] = json.dumps(record, sort_keys=True)
 
     @gl.public.view
     def get_organization(self, organization_id: str) -> str:
@@ -1580,3 +1724,37 @@ class ContributionReviewProtocol(gl.Contract):
         return self.wallet_review_ids.get(
             str(wallet).lower() + ":" + str(int(index)), ""
         )
+
+    @gl.public.view
+    def get_protocol_version(self) -> str:
+        return self.protocol_version
+
+    @gl.public.view
+    def is_paused(self) -> bool:
+        return self.paused
+
+    @gl.public.view
+    def get_platform_wallet(self) -> str:
+        return self.platform_wallet
+
+    @gl.public.view
+    def get_pending_platform_wallet(self) -> str:
+        return self.pending_platform_wallet
+
+    @gl.public.view
+    def get_signer_epoch(self) -> u256:
+        return self.signer_epoch
+
+    @gl.public.view
+    def get_review_job(self, job_id: str) -> str:
+        return self.review_jobs.get(job_id, "")
+
+    @gl.public.view
+    def get_review_job_count(self) -> u256:
+        return self.review_job_count
+
+    @gl.public.view
+    def get_review_job_id_at(self, index: u256) -> str:
+        if index >= self.review_job_count:
+            return ""
+        return self.review_job_ids[index]

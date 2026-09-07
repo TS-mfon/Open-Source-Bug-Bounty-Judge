@@ -26,6 +26,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   intelligent-contract:
     name: Intelligent Contract
@@ -45,3 +49,6 @@ jobs:
 
       - name: Direct contract tests
         run: uvx --from genlayer-test pytest -q contracts/tests/direct
+
+      - name: Protocol directory lint
+        run: uvx --from genvm-linter genvm-lint check contracts/protocol_directory.py
